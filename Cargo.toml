@@ -1,0 +1,19 @@
+[package]
+name = "zxcl"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "zxcl pure perpetual perfect-clear MDP builder and solver"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+rayon = "1.10"
+memmap2 = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
