@@ -1,0 +1,30 @@
+# Rust and native build output
+/target/
+**/target/
+
+# Local MDP inputs and outputs (hundreds of GiB)
+/data/
+/work/
+graph.bin
+rgraph.bin
+*.field_index.bin
+*.chains.u24.bin
+*.values.f32.bin
+*.values.u16.bin
+*.policy.u16.bin
+*.f64.bin
+*.state.bin
+*.u40.bin
+
+# Runtime output
+*.log
+*.jsonl
+*.progress
+reports/
+__pycache__/
+*.pyc
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
