@@ -109,6 +109,18 @@ described in [LOOP1_COMPILED.md](LOOP1_COMPILED.md).
 
 ## 3. Obtain and verify the field graph
 
+All builds now link system zlib **1.2.9 or later** for `uncompress2`, even when the
+compact-field command is unused. The Rust FFI uses declarations rather than compiling C headers;
+Debian/Ubuntu's `zlib1g-dev` supplies the development headers and linker library,
+with a compatible runtime `libz` also required. Runtime-only `zlib1g` does not
+supply the link-time library. The validated local library was zlib **1.2.11**;
+the minimum follows the [zlib 1.2.9 change log](https://zlib.net/ChangeLog.txt).
+If the development package is absent:
+
+```bash
+sudo apt-get install zlib1g-dev
+```
+
 ```bash
 ./scripts/download_graph.sh
 ./scripts/build_mdp.sh prepare
@@ -207,6 +219,10 @@ budget. See the [paired greedy validation](OPTIMIZATION_VALIDATION.md#greedy-act
 for the captured `vstar-greedy-001/solver.bin`, exactness checks and bounded L5
 and L2 timings. Select that binary explicitly with `SOLVER_BIN` or build the new source;
 the existing wrapper does not rebuild an already present executable.
+
+The [compact-field codec probe](OPTIMIZATION_VALIDATION.md#compact-field-codec-probe-2026-10-29)
+reduced sampled storage but made warm reads slower. It remains a standalone
+experiment, without a production PI reader or a demonstrated full-V* benefit.
 
 ## 7. Materialize the final result
 

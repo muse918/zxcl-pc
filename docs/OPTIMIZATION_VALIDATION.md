@@ -317,6 +317,17 @@ service, gone cgroup and gone worker process. Reusing the validated binary kept
 the two measured probe runs to about **36 seconds** combined; the earlier
 build/test timings remain separate.
 
+A later [0-versus-4 MiB L5 candidate](../work/limited-loop1/greedy-memo-001/final-evidence.json)
+reused the same validated `vstar-greedy-001` binary, slab, 768 MiB budget and two
+ABBA cycles, without rebuilding or rerunning tests. Its own paired medians were
+**1.553689162 → 1.556934122 s**, about **0.21% slower**, with no meaningful gain.
+The 4 MiB memo recorded **2,370,386 hits**, versus 2,299,689 in the earlier 1 MiB
+run; those separate runs are not a controlled 1-versus-4 MiB comparison. Probe
+time was **19.116306 s** and limited-run time **19.923725 s**, with monitored
+summed RSS peak **1,586,917,376 bytes**, write-root peak **838,940,852 bytes**,
+zero memory events and cleanup PASS. The capacity increase was rejected, and
+planned 16 MiB/L2 capacity follow-ups were dropped.
+
 The **L5 slab's** storage analysis compares **11,944,536 raw value/policy
 bytes** with **1,198,936 bytes** for independently compressed fields, including
 an assumed **31,040-byte index/header**. This is a hypothetical format estimate:
@@ -329,17 +340,83 @@ differences do not establish a convergence result.
 The full V* goal remains active and its ETA is unknown. This bounded greedy
 measurement does not establish a complete sweep or PI speedup. Complete raw
 policies require about **160.8 GiB**, and adjacent temporary value storage can
-exceed **80 GiB**, above the current 32 GiB experimental write budget. A bounded
-storage-format check and broader coverage are needed before a full PI run.
+exceed **80 GiB**, above the current 32 GiB experimental write budget. Production
+storage integration and further access-pattern evidence are needed before a full PI run.
 
-The chosen next design, **not implemented**, uses `CompactGroupSink` to append
+The proposed production integration, **not implemented**, uses `CompactGroupSink` to append
 existing per-field value/policy buffers in deterministic group order into compact
 blobs. Values would use the `DenseF32ValueLookup` field-read hook, and policies
 bounded per-worker decoded caches, with RAW fallback or ZLIB1 and strict
 size/consumption checks. The design uses bounded field/group buffers without a
-whole-layer arena. Before a full round, separated bounded L3–L7 spans need
-encode/decode CPU and size measurements. The single L5 storage sample does not
-establish a 32 GiB full-run bound.
+whole-layer arena. The standalone probe below supplies initial separated L3–L7
+encode/decode CPU and size measurements. Production integration and a 32 GiB
+full-run storage/time bound remain unverified.
+
+## Compact field codec probe (2026-10-29)
+
+`compact-field-001` implemented and measured a standalone RAW/ZLIB1 field codec;
+it has **not been adopted by production greedy/GMRES**. VALUE storage fell by a
+factor of **6.84**, but the measured warm sequential read/decode cost rose by
+**16.84×**. This establishes a storage/read-cost tradeoff, not a solve-time gain.
+
+The CLI is `compact-field-probe <pruned> <values> <policies> <work_parent>
+[max_span_states=1000000] [max_span_fields=512] [ABBA_cycles=2]
+[minimum_sample_ms=25]`. It reads selected field metadata and f32/u16 payloads;
+it builds no graph/queue domain or complete MDP index. This run selected three
+separated whole-field spans near header ordinals 1/8, 1/2 and 7/8 in each of
+L3–L7: **15 spans, 14,573,805 states and 3,520 fields**, with **87,566,230 original
+source bytes read by `pread`**. Exact span bounds are retained in the
+[probe summary](../work/limited-loop1/compact-field-001/compact-field-probe-1724455-1793277716819287101-0/summary.json).
+
+| Layer | Sampled states / fields | VALUE bytes, raw → compact | POLICY bytes, raw → compact |
+|---|---:|---:|---:|
+| L3 | 2,823,472 / 49 | 11,293,888 → 1,759,556 | 5,646,944 → 1,268,457 |
+| L4 | 2,988,030 / 1,222 | 11,952,120 → 1,020,221 | 5,976,060 → 975,799 |
+| L5 | 2,873,494 / 1,098 | 11,493,976 → 1,253,918 | 5,746,988 → 807,437 |
+| L6 | 2,994,913 / 857 | 11,979,652 → 1,889,453 | 5,989,826 → 463,376 |
+| L7 | 2,893,896 / 294 | 11,575,584 → 2,599,054 | 5,787,792 → 317,028 |
+
+Compact sizes include headers/indexes; raw sizes are flat payloads with selected
+metadata already resident. Across these samples, VALUE ratios range from
+**4.45–11.72×** (aggregate **58,295,220 → 8,522,202 bytes**, 6.84×), and POLICY
+from **4.45–18.26×** (**29,147,610 → 3,832,097 bytes**, 7.61×).
+
+Two warm ABBA cycles gave four samples per arm, with retained reader handles and
+normalized repeated passes. Summing per-layer median sequential passes gives
+VALUE **0.019876070 → 0.334760300 s** and POLICY **0.009269854 → 0.234653087 s**;
+compact read/decode was 16.84× and 25.31× slower respectively. Encode/write was
+also slower (2.47× VALUE, 1.76× POLICY), including flush/`sync_data` and compact
+atomic publication. Reader-open/index-load time was measured separately.
+
+These timings include compact decoder checksums and its own source-guard checks;
+the raw baseline has no per-field checksum. Source copying/setup and restored-byte
+comparisons are outside the timed phases. Restored bytes matched exactly,
+compact checksums passed, and all 15 original-source metadata identities stayed
+unchanged; source payloads were not fully hashed. Shuffled whole-field reads do
+not measure the policy random-code hot path. Physical device traffic, cold-cache
+performance, a complete storage footprint and V* convergence remain unmeasured.
+
+The captured solver SHA-256 is
+`2f44fc207b63e6abb23f4b10a1c1ea4c02dd9221dc3c94172f38369fda5326c1`.
+`rust-tests.log` records **223 passes** (9 auxiliary + 214 main), with **10
+ignored**. Rust tests took **104.886 s**, release build **62.445 s**, and the
+probe **54.939 s**. The enclosing limited run completed in **223.504 s**, with
+monitored summed RSS peak **928,026,624 bytes** and monitored write-root peak
+**882,546,517 bytes** across the retained global work root. Limits were 32 GiB
+RAM, CPU affinity 0–3, 32 GiB writes and no time limit; all memory events were
+zero. The [final evidence](../work/limited-loop1/compact-field-001/final-evidence.json)
+and [cleanup audit](../work/limited-loop1/compact-field-001/cleanup-audit.json)
+passed. No production full-PI or V* timing improvement is claimed.
+
+For the captured binary and existing read-only inputs, use a fresh run directory:
+
+```bash
+python3 scripts/run_limited_experiment.py \
+  --mem-gib 32 --cpus 4 --disk-gib 32 --seconds 0 \
+  --output-dir /path/new-compact-run -- \
+  "$PWD/work/limited-loop1/compact-field-001/solver.bin" compact-field-probe \
+  /path/pruned /path/values /path/policies /path/new-compact-run 1000000 512 2 25
+```
 
 ## Initial sweep validation matrix
 

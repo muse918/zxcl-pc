@@ -28,7 +28,13 @@ environment variables.
 
 ## Quick start
 
+The Linux build requires system zlib 1.2.9 or newer, which introduced `uncompress2`
+([zlib change log](https://zlib.net/ChangeLog.txt)). On Debian/Ubuntu, install
+`zlib1g-dev` before running Cargo:
+
 ```bash
+sudo apt-get update
+sudo apt-get install zlib1g-dev
 git clone https://github.com/muse918/zxcl-pc.git
 cd zxcl-pc
 cargo test --workspace

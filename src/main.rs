@@ -2,6 +2,8 @@
 
 mod action_avg_cache;
 mod action_cache_probe;
+mod compact_field;
+mod compact_field_probe;
 mod greedy_cache_probe;
 #[cfg(test)]
 mod greedy_action_cache_tests;
@@ -11662,6 +11664,7 @@ fn print_usage(program: &str) {
     eprintln!("  {program} boundary-dag-probe <graph.bin> <pruned_layer_dir> <policy_dir|greedy> <layer=7|8|9> <max_roots> <l0.f32> [repetitions=10]");
     eprintln!("  {program} loop1-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <max_l8_states> [repetitions=5]");
     eprintln!("  {program} greedy-cache-probe <graph.bin> <pruned> <values> <work_parent> [layer=5] [max_current_states=2000000] [ABBA_cycles=2] [cache_mib=768] [memo_mib=1] [start_field_index]");
+    eprintln!("  {program} compact-field-probe <pruned> <values> <policies> <work_parent> [max_span_states=1000000] [max_span_fields=512] [ABBA_cycles=2] [minimum_sample_ms=25]");
     eprintln!("  {program} loop1-sparse-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <new-y.f32> [roots=32;0=all] [memo_mib=4096] [validation=reachable|full] [mode=affine|linear] [gamma=1] [workers=4]");
     eprintln!("  {program} full-l8-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> [repetitions=3] [Vstar_dir]");
     eprintln!("  {program} loop1-dag-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <new-y.f32> [roots=32;0=all] [memo_mib=256] [validation=reachable|full] [repetitions=5] [tail=l9|none] [baseline=full|1|0]");
@@ -11719,6 +11722,7 @@ fn main() -> Result<()> {
         "index-io-probe" => index_io_probe::run(&args),
         "action-cache-probe" => action_cache_probe::run(&args),
         "greedy-cache-probe" => greedy_cache_probe::run(&args),
+        "compact-field-probe" => compact_field_probe::run(&args),
         "survival-krylov" => run_survival_krylov(&args),
         "boundary-cond-avg" => run_boundary_cond_avg(&args),
         "boundary-survival-rank" => run_boundary_survival_rank(&args),

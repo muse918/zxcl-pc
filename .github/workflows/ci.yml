@@ -10,5 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zlib1g-dev
       - name: Test workspace
         run: cargo test --workspace -- --test-threads=1
