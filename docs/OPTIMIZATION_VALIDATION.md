@@ -111,7 +111,7 @@ RSS peak **5,167,513,600 bytes**, monitored new-write/scratch peak
 **552,760,186 bytes** and no OOM events. Its `final-evidence.json` records the
 audit. These prefix timings do not predict full production GMRES performance.
 
-### GMRES warm-start precheck: fixtures passed, production run pending
+### GMRES warm-start precheck: full-boundary production acceptance
 
 `work/limited-loop1/whole-gmres-001/` was **intentionally interrupted**, not
 completed or timed out. It validated all **86,329,867,487 stored policy states in
@@ -134,7 +134,7 @@ The implemented opt-in **`PI_GMRES_RAW_WARM_START=1`** defaults to off and requi
 WHOLE mode with `gamma=1`. Its authoritative raw precheck runs before L9/DAG
 preparation. Passing the same absolute infinity-norm gate (0.003 in this run)
 returns `ACCEPTED_WARM_START`, zero Krylov iterations and `dag_built=0`, with
-relative residual marked `relative_not_computed`. This accepts a fixed-policy
+`relative_residual=not_computed`. This accepts a fixed-policy
 warm start within the configured tolerance; it does not establish optimality.
 Rejection pays an extra raw precheck cost, then continues through normal GMRES
 and its original raw/DAG final bitwise gate.
@@ -157,12 +157,59 @@ validate the raw-precheck implementation and fixtures. The earlier index and
 prefix performance measurements remain bound to the recorded **unit-002**
 binary; they are not fresh measurements of this **unit-003** binary.
 
-Production `work/limited-loop1/whole-gmres-002/` is running full validation of all
-**86,329,867,487 stored policy states**, followed by the raw application for
-**all 817,740 roots**. It sets RAW warm precheck and WHOLE to 1, L9 tail,
-compiled-L8/L9 and action memo to 0, with the reference memo setting at 4096 MiB
-and four workers under the same resource limits. Its actual production result
-and performance are **pending**.
+[GitHub CI for commit `05a62a5`](https://github.com/muse918/zxcl-pc/actions/runs/40863391716)
+also passed. The workflow uses `cargo test --workspace -- --test-threads=1`,
+matching the validated serial fixture mode that avoids the host inotify quota
+failure; the guards were not relaxed.
+
+Production `work/limited-loop1/whole-gmres-002/` **completed with return code 0**.
+It validated all **86,329,867,487 stored policy states** and evaluated the
+original raw affine operator for **all 817,740 roots** using the unit-003 binary.
+RAW warm precheck and WHOLE were 1; L9 tail, compiled-L8/L9 and action memo were
+0, with the reference memo setting at 4096 MiB and four workers under the same
+resource limits. The supplied warm vector was accepted with
+**`||T_pi(warm) - warm||_inf = 0.00146484375 <= 0.003`** and republished unchanged.
+All output and applied values were finite. Their hashes matched the recorded warm
+vector and historical full raw result exactly.
+
+| Completed production phase | Seconds |
+|---|---:|
+| Full stored-policy validation | 226.465798 |
+| Original raw numeric evaluation, including dense reset and terminal table | 1805.436230052 |
+| Raw policy application reported within that evaluation | 1805.375333216 |
+| Warm-start preflight total | 2031.954399547 |
+| Limited-run controller total | 2037.115697734 |
+
+The raw numeric evaluation took about **30.09 minutes**; total limited-run time
+was about **33 minutes 57 seconds**. Startup includes graph/domain loading,
+formula indexing and full stored-policy validation; the OS file cache is not
+claimed cold. Status was **`ACCEPTED_WARM_START`**, with **zero Krylov iterations,
+no DAG construction and relative residual `not_computed`**. No compiled-L9
+shortcut or DAG bitwise gate executed on this accepted raw path. This is an
+actual full-boundary fixed-policy warm-start acceptance, not iterative
+convergence or an optimal-V* result.
+
+The [final evidence](../work/limited-loop1/whole-gmres-002/final-evidence.json)
+records monitored summed RSS peak **5,357,322,240 bytes** (about 4.989 GiB),
+monitored new-write/scratch peak **573,662,192 bytes** (about 0.534 GiB), CPU
+affinity 0–3 and zero OOM/OOM-kill events. The cgroup recorded **5,825,341
+memory-max events** under file-cache charge/reclaim pressure; these were not OOM
+events. All 32 recorded input stat/lstat identities stayed unchanged; large
+payloads were not rehashed by this run. Final cleanup passed: the service was
+inactive, its cgroup gone and the saved solver process identity gone.
+
+The independent [same-work audit](../work/limited-loop1/whole-gmres-002/same-work-audit.json)
+passed **201 checks**, including every applied f32 value, preserved warm values,
+18 matching mathematical/cache/logical-read counters and captured identities.
+For the same **16,401,897,372 source-touch records**, deduplication reduced flushes
+from **8,016,142 to 67,262** and advised ranges from **169,884,035 to 58,154,702**.
+
+For historical context, `whole-003` raw S was **3091.580989225 seconds** for the
+same warm vector and policy, with all 32 input identities matching. These are
+different historical runs, not a controlled A/B comparison. The completed
+`whole-003` multi-case probe has a different workload from this CLI, so its total
+runtime is not a previous GMRES CLI baseline. The demonstrated change here is
+acceptance through the original raw gate before policy-specific DAG construction.
 
 The wrapper inherits these opt-ins. Point `SOLVER_BIN` to the captured executable:
 its existing helper only builds when the selected binary is missing, so an old
@@ -184,11 +231,15 @@ are not accelerated or validated by this run. Complete policy files (about
 160.8 GiB) and final value layers (about 321.6 GiB) exceed the current 32 GiB
 experimental write budget; this configuration preview is not a full-PI run.
 
-Future GMRES results must separate preparation, policy-scoped compilation,
-Krylov applications, original final verification and total CLI time. No complete
-V* solve, PI speedup, other kick-table variant or final ten-layer materialization
-is established by this stage's completed tests, index replays and prefix
-comparison.
+Source backup instructions and verification are in
+[SOURCE_BACKUPS.md](SOURCE_BACKUPS.md). Verified snapshots are kept under
+`/home/muse918/pcfinder-source-backups/zxcl-pc/`, with `LATEST.json` and an active
+15-minute timer. The validated source is also available on the
+[source-backup branch](https://github.com/muse918/zxcl-pc/tree/codex/source-backup-20261029).
+
+No complete V* solve, PI speedup, other kick-table variant or final ten-layer
+materialization is established by this stage's completed tests, index replays,
+prefix comparison and accepted production warm start.
 
 ## Initial sweep validation matrix
 
@@ -297,12 +348,15 @@ GRAPH_BIN=/mnt/fast2/muse918/pcfinder/graph.bin \
 python3 -m unittest discover -s tests -p 'test_gmres_runtime.py' -v
 ```
 
-## Limits
+## Initial sweep limits and remaining full-solve scope
 
 The production state space contains 86,329,867,487 states; one complete f32 snapshot
-is about 321.6 GiB. No complete rebuild, full solve, full-runtime comparison or
-peak-RSS validation was performed for these changes. Tests cover numerical
-equivalence and bounded mechanisms, not completion at production scale.
+is about 321.6 GiB. The initial sweep pass performed no complete rebuild, full
+solve, full-runtime comparison or peak-RSS validation; its tests covered numerical
+equivalence and bounded mechanisms. The later full-boundary fixed-policy raw
+acceptance and its observed resource peaks are documented above. A complete index
+rebuild, iterative GMRES convergence, complete PI and final-layer runtime
+comparison remain unverified by these results.
 
 The current field graph assumes exactly **15,185,706 fields** and u24 membership.
 An SRS+/no-180 graph requires separate graph/domain/format adaptation and validation;

@@ -60,7 +60,10 @@ processes before reporting confirmed cleanup. Unit and live smoke checks of
 these corrections are recorded below. The historical `whole-003` probe completed
 the full-boundary operator checks and its own resource record; see its
 [final evidence](../work/limited-loop1/whole-003/final-evidence.json).
-The later `whole-gmres-001` production fixed-policy solve remains pending.
+The later `whole-gmres-001` attempt was intentionally interrupted. Its successor,
+`whole-gmres-002`, completed full-boundary raw warm-start acceptance with zero
+Krylov iterations and no DAG construction; see the
+[production record](OPTIMIZATION_VALIDATION.md#gmres-warm-start-precheck-full-boundary-production-acceptance).
 The user-confirmed RAM, CPU, output/scratch and unlimited-time constraints
 remain unchanged.
 
@@ -86,8 +89,10 @@ numeric acceptance check are documented in
 full-boundary correctness and application-cost checks against a bounded numeric
 reference, as recorded in its
 [final evidence](../work/limited-loop1/whole-003/final-evidence.json).
-Those checks do not establish production GMRES convergence or runtime;
-`whole-gmres-001` remains pending.
+Those historical checks do not establish production GMRES convergence or runtime.
+The later full-boundary raw warm-start acceptance and its measured CLI runtime
+are recorded separately in
+[OPTIMIZATION_VALIDATION.md](OPTIMIZATION_VALIDATION.md#gmres-warm-start-precheck-full-boundary-production-acceptance).
 
 ## Unused 224 GiB capacity-planning profile
 

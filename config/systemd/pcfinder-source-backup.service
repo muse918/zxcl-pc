@@ -17,4 +17,3 @@ TimeoutStartSec=180
 TimeoutStopSec=3
 KillMode=control-group
 NoNewPrivileges=yes
-

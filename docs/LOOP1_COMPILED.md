@@ -91,6 +91,13 @@ see the completed all-root results below. A complete optimal-MDP solve, other
 kicktable variants and final ten-layer value tables are not established by
 these checks.
 
+The later default-off `PI_GMRES_RAW_WARM_START=1` route checks the original raw
+operator before L9/DAG preparation. Its completed production warm-start acceptance
+for all 817,740 roots, with zero Krylov iterations and no DAG construction, is
+recorded separately in the
+[GMRES follow-up](OPTIMIZATION_VALIDATION.md#gmres-warm-start-precheck-full-boundary-production-acceptance).
+It does not change the historical compiled-operator measurements below.
+
 ## L9/L8 sweep opt-ins
 
 `PI_LOOP1_COMPILED_L9=1` enables prepared L9 evaluation in

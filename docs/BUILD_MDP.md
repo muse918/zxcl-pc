@@ -197,8 +197,9 @@ unreachable at V around 4,000 because a few f32 ULPs already exceed `1e-3`.
 
 The current GMRES source-bucket and phase-timing changes are tracked in the
 [V* solve follow-up](OPTIMIZATION_VALIDATION.md#graph-to-index-and-v-solve-follow-up-2026-10-29).
-Its actual GMRES performance measurements remain pending; warm fixed-policy DAG
-timings alone do not establish this solve stage's runtime.
+It records a completed production fixed-policy warm-start acceptance through the
+full raw operator, with zero Krylov iterations. Complete solve performance remains
+unmeasured; warm fixed-policy DAG timings alone do not establish it.
 
 ## 7. Materialize the final result
 
