@@ -241,6 +241,106 @@ No complete V* solve, PI speedup, other kick-table variant or final ten-layer
 materialization is established by this stage's completed tests, index replays,
 prefix comparison and accepted production warm start.
 
+## Greedy action reuse and V* convergence follow-up (2026-10-29)
+
+This stage targets greedy policy improvement within V* iteration. It retains the
+original **817,740 boundary coordinates** and uses no left/right reflection.
+The earlier 33-minute-57-second result accepted an existing fixed-policy warm
+start with zero Krylov iterations; it did not measure V* convergence.
+
+`FULL_MDP_GREEDY_ACTION_CACHE_MIB` defaults to **0 (off)**. A positive setting
+reserves a bounded greedy action memo from the existing task lookup-cache budget.
+It reuses the ordered action average keyed by resolved target and pre-reveal ID
+(`zid`), preserving missing probability mass, f32 reveal order and first-action
+ties. Its scope is a greedy kernel invocation, not reuse across changing value vectors.
+
+The captured binary in `work/limited-loop1/vstar-greedy-001/` has SHA-256
+`2d1baa1843f26a04311aad8ff143678a106f0244aa9594328e676676cfc2dba0`.
+The completed release checks passed **215 Rust tests** (9 auxiliary + 206 main),
+with **10 ignored**, and **23 wrapper tests**. The tiny discounted ten-layer
+value-iteration fixture does not exercise fixed-policy GMRES evaluation or
+establish production PI convergence.
+
+The L5 comparison selected original block range **2231368..2232336**, covering
+**968 whole fields and 1,990,756 states**. It used the same validated binary with
+the feature toggled, an equal **768 MiB total task cache budget**, and either no
+action memo or **1 MiB** charged within that budget. Two ABBA cycles supplied
+four measured samples per arm after warmup. This is a **sequential greedy
+kernel**, with four-CPU affinity and an immutable existing L6 value snapshot;
+the full next layer was not pinned or fully membership-validated by this probe.
+
+The second comparison, `work/limited-loop1/vstar-greedy-l2-002/`, selected
+**361,207 states across two whole L2 fields**, starting at original block 0.
+It reused the same validated binary and 768 MiB/1 MiB settings, without another
+build or test-suite run. Two ABBA cycles again supplied four samples per arm.
+All retained f32 values were finite; value bits and u16 policy bytes matched.
+
+| Bounded greedy kernel, median wall seconds | Memo off | 1 MiB action memo | Timing ratio | Time decrease |
+|---|---:|---:|---:|---:|
+| L5: 1,990,756 states | 1.400708552 | 1.244658535 | 1.125375767× | 11.14079% |
+| L2: 361,207 states | 1.622773734 | 1.404232418 | 1.155630444× | 13.4671465% |
+
+Median process CPU seconds were **1.400600203 → 1.244523933** for L5 and
+**1.609633011 → 1.392310994** for L2. These are local kernel measurements.
+Every greedy f32 value bit, u16 policy byte and mathematical counter matched.
+In L5, each arm evaluated **6,757,636 actions**; the memo recorded **2,299,689
+hits** and saved **10,714,263 reveal evaluations**. Next-layer materialization stayed at
+**24,125,237 states**, and logical requested source bytes stayed at
+**174,848,927**. Thus this sample shows saved action/reveal work, not reduced
+source I/O; physical device traffic was not measured. The OS cache is not claimed
+cold. Setup (**3.019766 s**), including placement-plan construction
+(**0.222516 s**), and output comparisons are outside kernel timing; setup
+amortization was not measured.
+
+The [final evidence](../work/limited-loop1/vstar-greedy-001/final-evidence.json)
+and [cleanup audit](../work/limited-loop1/vstar-greedy-001/cleanup-audit.json)
+passed. All eight recorded source metadata identities stayed unchanged; the
+source payloads were not fully hashed. The probe took **17.364 s** and the
+bounded slab analysis **4.047 s**. The enclosing limited run took **291.530 s**,
+including wrapper tests (**111.242 s**), Rust tests (**100.143 s**) and release
+build (**57.017 s**); that total is not a greedy-kernel time. Monitored summed
+RSS peaked at **1,577,222,144 bytes**, and monitored new-write/scratch at
+**843,166,776 bytes**, under 32 GiB RAM, CPU affinity 0–3, 32 GiB writes and no
+time limit. Memory-max, OOM and OOM-kill events were zero; the service was inactive
+and its cgroup gone after completion.
+
+The [L2 final evidence](../work/limited-loop1/vstar-greedy-l2-002/final-evidence.json)
+also passed its root audit. Each arm evaluated **10,977,983 actions**; the memo
+recorded **3,868,463 hits** and saved **13,567,112 reveal evaluations**. Next-layer
+materialization stayed at **22,034,910 states** and logical requested source bytes
+at **155,327,991**. Six input versions, the captured binary and the earlier
+validation-source hashes stayed unchanged. The limited run took **18.410102194 s**,
+with monitored summed RSS peak **1,745,272,832 bytes** and monitored write-root
+peak **613,115,622 bytes**, including retained artifacts. It used the same limits
+and recorded zero memory-max/OOM/OOM-kill events. Cleanup confirmed the inactive
+service, gone cgroup and gone worker process. Reusing the validated binary kept
+the two measured probe runs to about **36 seconds** combined; the earlier
+build/test timings remain separate.
+
+The **L5 slab's** storage analysis compares **11,944,536 raw value/policy
+bytes** with **1,198,936 bytes** for independently compressed fields, including
+an assumed **31,040-byte index/header**. This is a hypothetical format estimate:
+no corresponding production format or decoder is implemented, and no full-layer
+compression ratio is inferred. Every sampled new value matched the old candidate
+snapshot bit-for-bit; **1,340 of 1,990,756 policy codes (0.06731%)** differed.
+Old witness consistency and action advantages were not verified, so these
+differences do not establish a convergence result.
+
+The full V* goal remains active and its ETA is unknown. This bounded greedy
+measurement does not establish a complete sweep or PI speedup. Complete raw
+policies require about **160.8 GiB**, and adjacent temporary value storage can
+exceed **80 GiB**, above the current 32 GiB experimental write budget. A bounded
+storage-format check and broader coverage are needed before a full PI run.
+
+The chosen next design, **not implemented**, uses `CompactGroupSink` to append
+existing per-field value/policy buffers in deterministic group order into compact
+blobs. Values would use the `DenseF32ValueLookup` field-read hook, and policies
+bounded per-worker decoded caches, with RAW fallback or ZLIB1 and strict
+size/consumption checks. The design uses bounded field/group buffers without a
+whole-layer arena. Before a full round, separated bounded L3–L7 spans need
+encode/decode CPU and size measurements. The single L5 storage sample does not
+establish a 32 GiB full-run bound.
+
 ## Initial sweep validation matrix
 
 | Change | Checked behavior and evidence |

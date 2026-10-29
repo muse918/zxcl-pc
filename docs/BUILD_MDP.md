@@ -201,6 +201,13 @@ It records a completed production fixed-policy warm-start acceptance through the
 full raw operator, with zero Krylov iterations. Complete solve performance remains
 unmeasured; warm fixed-policy DAG timings alone do not establish it.
 
+`FULL_MDP_GREEDY_ACTION_CACHE_MIB` opts into bounded greedy action reuse; its
+default is `0`. The measured `1` MiB setting comes from the existing task lookup
+budget. See the [paired greedy validation](OPTIMIZATION_VALIDATION.md#greedy-action-reuse-and-v-convergence-follow-up-2026-10-29)
+for the captured `vstar-greedy-001/solver.bin`, exactness checks and bounded L5
+and L2 timings. Select that binary explicitly with `SOLVER_BIN` or build the new source;
+the existing wrapper does not rebuild an already present executable.
+
 ## 7. Materialize the final result
 
 ```bash

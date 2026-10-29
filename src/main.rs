@@ -2,6 +2,9 @@
 
 mod action_avg_cache;
 mod action_cache_probe;
+mod greedy_cache_probe;
+#[cfg(test)]
+mod greedy_action_cache_tests;
 mod external_layer;
 mod f32_ram;
 mod graph;
@@ -5595,7 +5598,123 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
     collect_action_stats: bool,
     direct_l9_source: Option<terminal_l9::Source<'_>>,
 ) -> Result<FullMdpChunkResult> {
+    compute_full_mdp_range_group_f32_rolling_sinks_with_action_cache(
+        layer, block_ranges, cur, out_file, ram_out, policy_out_file, graph, qfwd, legal_placed, terminal_reset_avg, next_layer, next_values_path, next_values_ram, old_l0_dense, gamma, per_task_cache_cap, qstate_count, sparse_lookup_max_count, two_line_field, prewarm_field_targets, const_field_fastpath, collect_cache_stats, collect_action_stats, direct_l9_source, None,
+    )
+}
+
+fn compute_full_mdp_range_group_f32_rolling_sinks_with_action_cache(
+    layer: usize,
+    block_ranges: &[std::ops::Range<usize>],
+    cur: &layer_store::FieldChainLayer,
+    out_file: Option<&File>,
+    ram_out: Option<SharedF32Out>,
+    policy_out_file: Option<&File>,
+    graph: &FieldGraph,
+    qfwd: &QForwardGraph,
+    legal_placed: &[[u8; 2]],
+    terminal_reset_avg: &[[f32; 7]],
+    next_layer: Option<&layer_store::FieldChainLayer>,
+    next_values_path: Option<&Path>,
+    next_values_ram: Option<&[f32]>,
+    old_l0_dense: Option<&[f32]>,
+    gamma: f32,
+    per_task_cache_cap: usize,
+    qstate_count: usize,
+    sparse_lookup_max_count: usize,
+    two_line_field: FieldId,
+    prewarm_field_targets: bool,
+    const_field_fastpath: bool,
+    collect_cache_stats: bool,
+    collect_action_stats: bool,
+    direct_l9_source: Option<terminal_l9::Source<'_>>,
+    action_source: Option<action_avg_cache::ActionSource<'_>>,
+) -> Result<FullMdpChunkResult> {
+    if action_source.is_some() {
+        compute_greedy_group_with_action_cache_impl::<true>(
+            layer, block_ranges, cur, out_file, ram_out, policy_out_file, graph, qfwd, legal_placed, terminal_reset_avg, next_layer, next_values_path, next_values_ram, old_l0_dense, gamma, per_task_cache_cap, qstate_count, sparse_lookup_max_count, two_line_field, prewarm_field_targets, const_field_fastpath, collect_cache_stats, collect_action_stats, direct_l9_source, action_source,
+        )
+    } else {
+        compute_greedy_group_with_action_cache_impl::<false>(
+            layer, block_ranges, cur, out_file, ram_out, policy_out_file, graph, qfwd, legal_placed, terminal_reset_avg, next_layer, next_values_path, next_values_ram, old_l0_dense, gamma, per_task_cache_cap, qstate_count, sparse_lookup_max_count, two_line_field, prewarm_field_targets, const_field_fastpath, collect_cache_stats, collect_action_stats, direct_l9_source, None,
+        )
+    }
+}
+
+// The const-generic false specialization keeps the default greedy hot path
+// free of action-cache branches. A cache belongs to one group and one immutable
+// next-value source, so gamma and denominator are part of its stored final score.
+#[inline]
+fn greedy_action_average<const USE_ACTION_CACHE: bool>(
+    action_cache: &mut Option<action_avg_cache::ActionAverageCache>,
+    zid: u32,
+    lookup: &mut NextValueLookup<'_>,
+    field2: FieldId,
+    recs: &[qgraph::QForwardRec],
+    gamma: f32,
+    denom: f32,
+    stats: &mut FullMdpLayerStats,
+    collect_action_stats: bool,
+) -> Result<f32> {
+    if USE_ACTION_CACHE {
+        if let Some(cache) = action_cache.as_mut() {
+            if let Some(cached) = cache.get(field2, zid, recs.len()) {
+                if collect_action_stats { stats.missing_next_terms += u64::from(cached.missing_terms); }
+                return Ok(cached.value);
+            }
+            let (sum, missing) = lookup.sum_recs(field2, recs)?;
+            if collect_action_stats { stats.missing_next_terms += missing; }
+            let scaled = if gamma == 1.0 { sum } else { gamma * sum };
+            let value = scaled / denom;
+            cache.insert(field2, zid, action_avg_cache::CachedAverage {
+                value,
+                missing_terms: u8::try_from(missing).context("greedy action missing-term count exceeds u8")?,
+            });
+            return Ok(value);
+        }
+    }
+    Ok(sum_dense_recs_scaled(lookup, field2, recs, gamma, stats, collect_action_stats)? / denom)
+}
+
+fn compute_greedy_group_with_action_cache_impl<const USE_ACTION_CACHE: bool>(
+    layer: usize,
+    block_ranges: &[std::ops::Range<usize>],
+    cur: &layer_store::FieldChainLayer,
+    out_file: Option<&File>,
+    ram_out: Option<SharedF32Out>,
+    policy_out_file: Option<&File>,
+    graph: &FieldGraph,
+    qfwd: &QForwardGraph,
+    legal_placed: &[[u8; 2]],
+    terminal_reset_avg: &[[f32; 7]],
+    next_layer: Option<&layer_store::FieldChainLayer>,
+    next_values_path: Option<&Path>,
+    next_values_ram: Option<&[f32]>,
+    old_l0_dense: Option<&[f32]>,
+    gamma: f32,
+    per_task_cache_cap: usize,
+    qstate_count: usize,
+    sparse_lookup_max_count: usize,
+    two_line_field: FieldId,
+    prewarm_field_targets: bool,
+    const_field_fastpath: bool,
+    collect_cache_stats: bool,
+    collect_action_stats: bool,
+    direct_l9_source: Option<terminal_l9::Source<'_>>,
+    action_source: Option<action_avg_cache::ActionSource<'_>>,
+) -> Result<FullMdpChunkResult> {
     anyhow::ensure!(out_file.is_some() || ram_out.is_some() || (layer == 9 && policy_out_file.is_some()), "greedy sweep needs a value sink or an L9 policy sink");
+    if USE_ACTION_CACHE {
+        if let Some(source) = action_source { source.placements.check_graph(qfwd, qstate_count)?; }
+    }
+    let (mut action_cache, lookup_cache_cap) = if USE_ACTION_CACHE && layer < 9 {
+        match action_source {
+            Some(source) => action_avg_cache::ActionAverageCache::partition(
+                source.requested_bytes, per_task_cache_cap, qstate_count,
+            ),
+            None => (None, per_task_cache_cap),
+        }
+    } else { (None, per_task_cache_cap) };
     // The legacy const-field shortcut is unsound for pruned reveal children.
     let _ = const_field_fastpath;
     let mut lookup_opt = if layer < 9 {
@@ -5603,12 +5722,12 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
         Some(if let Some(source) = direct_l9_source.filter(|_| layer == 8) {
             // This bounded membership/policy cache consumes the planner's
             // per-task cache allowance; no L9 value layer is pinned.
-            NextValueLookup::TerminalL9(terminal_l9::Lookup::new(source, per_task_cache_cap, collect_cache_stats)?)
+            NextValueLookup::TerminalL9(terminal_l9::Lookup::new(source, lookup_cache_cap, collect_cache_stats)?)
         } else if let Some(values) = next_values_ram {
             NextValueLookup::Ram(RamNextValueLookup::new(
                 nl,
                 values,
-                per_task_cache_cap,
+                lookup_cache_cap,
                 collect_cache_stats,
                 false,
             )?)
@@ -5616,7 +5735,7 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
             NextValueLookup::File(DenseF32ValueLookup::open(
                 nl,
                 next_values_path.expect("missing next values path"),
-                per_task_cache_cap,
+                lookup_cache_cap,
                 qstate_count,
                 sparse_lookup_max_count,
                 collect_cache_stats,
@@ -5703,6 +5822,11 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
                 if recs.is_empty() { continue; }
                 let Some(edges) = field_edges[placed as usize] else { continue; };
                 let denom = recs.len() as f32;
+                let action_zid = if USE_ACTION_CACHE && action_cache.is_some() {
+                    action_source.expect("greedy action cache needs a placement plan")
+                        .placements.zid_for_placement(qid, placed)
+                        .context("greedy action has no validated pre-reveal ID")?
+                } else { 0 };
 
                 if layer == 4 {
                     let lookup = lookup_opt.as_mut().expect("missing next lookup");
@@ -5712,7 +5836,7 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
                             stats.terminal_2_edges += 1;
                             terminal_reset_avg[qid as usize][placed as usize]
                         } else {
-                            sum_dense_recs_scaled(lookup, field2, recs, gamma, &mut stats, collect_action_stats)? / denom
+                            greedy_action_average::<USE_ACTION_CACHE>(&mut action_cache, action_zid, lookup, field2, recs, gamma, denom, &mut stats, collect_action_stats)?
                         };
                         if cand > best { best = cand; best_code = encode_policy_u16(placed, ei); }
                     }
@@ -5729,7 +5853,7 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
                     let lookup = lookup_opt.as_mut().expect("missing next lookup");
                     for (ei, &field2) in edges.iter().enumerate() {
                         if collect_action_stats { stats.action_count += 1; }
-                        let cand = sum_dense_recs_scaled(lookup, field2, recs, gamma, &mut stats, collect_action_stats)? / denom;
+                        let cand = greedy_action_average::<USE_ACTION_CACHE>(&mut action_cache, action_zid, lookup, field2, recs, gamma, denom, &mut stats, collect_action_stats)?;
                         if cand > best { best = cand; best_code = encode_policy_u16(placed, ei); }
                     }
                 }
@@ -5769,6 +5893,14 @@ fn compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
     }
     if let Some(of) = out_file { flush_chunk_output(of, chunk_start_off, &mut chunk_out_bytes)?; }
     if let Some(pf) = policy_out_file { flush_chunk_output(pf, policy_chunk_start_off, &mut policy_chunk_bytes)?; }
+    if let Some(cache) = action_cache {
+        let counters = cache.stats();
+        stats.action_avg_hits = counters.hits;
+        stats.action_avg_misses = counters.misses;
+        stats.action_avg_collisions = counters.collisions;
+        stats.action_avg_saved_reveals = counters.saved_reveals;
+        stats.action_avg_cache_bytes = counters.payload_bytes;
+    }
     if collect_cache_stats {
         if let Some(lookup) = lookup_opt.as_ref() {
             let ds = lookup.stats_snapshot();
@@ -6753,13 +6885,38 @@ fn emit_greedy_mdp_sweep(
     gamma: f32,
     config: &GreedyEmitConfig,
 ) -> Result<()> {
+    emit_greedy_mdp_sweep_with_action_cache(
+        graph, qfwd, legal_placed, terminal_reset_avg, full_layers, out_dir, policy_out_dir, qstate_count, two_line_field, gamma, config, None,
+    )
+}
+
+fn emit_greedy_mdp_sweep_with_action_cache(
+    graph: &FieldGraph,
+    qfwd: &QForwardGraph,
+    legal_placed: &[[u8; 2]],
+    terminal_reset_avg: &[[f32; 7]],
+    full_layers: &[layer_store::FieldChainLayer],
+    out_dir: &Path,
+    policy_out_dir: Option<&Path>,
+    qstate_count: usize,
+    two_line_field: FieldId,
+    gamma: f32,
+    config: &GreedyEmitConfig,
+    action_source: Option<action_avg_cache::ActionSource<'_>>,
+) -> Result<()> {
     anyhow::ensure!(full_layers.len() == 10, "greedy sweep needs ten membership layers");
     anyhow::ensure!(!config.policy_only || policy_out_dir.is_some(), "FULL_MDP_POLICY_ONLY=1 requires policy_out_dir");
+    if let Some(source) = action_source { source.placements.check_graph(qfwd, qstate_count)?; }
+    let action_resident_bytes = action_source.map_or(0, |source| source.storage_bytes());
     let direct_l9 = config.policy_only && terminal_l9::enabled_from_env();
     let scratch = if config.policy_only { Some(GreedyEmitScratch::create(out_dir)?) } else { None };
     let mut next_values_holder: Option<PinnedLayer> = None;
     let mut next_values_path: Option<PathBuf> = None;
     let mut next_path_is_owned = false;
+    if let Some(source) = action_source {
+        eprintln!("greedy-action-cache enabled requested_bytes_per_task={} placement_resident_bytes={} boundary_reduced=0 scope=group_next_layer",
+            source.requested_bytes, action_resident_bytes);
+    }
     for layer in (0usize..=9).rev() {
         let layer_start = Instant::now();
         let cur = &full_layers[layer];
@@ -6771,7 +6928,7 @@ fn emit_greedy_mdp_sweep(
                 mode: terminal_l9::Mode::Greedy(legal_placed),
             })?;
             let policy_path = mdp_policy_u16_path(policy_out_dir.expect("policy-only directory"), 9);
-            let plan = config.tuning.plan(&cur.metas, 0, 0, rayon::current_num_threads(), qstate_count)?;
+            let plan = config.tuning.plan(&cur.metas, 0, action_resident_bytes, rayon::current_num_threads(), qstate_count)?;
             let policy_file = File::create(&policy_path)
                 .with_context(|| format!("failed to create {}", policy_path.display()))?;
             policy_file.set_len(cur.total_states.checked_mul(2).context("L9 policy size overflow")?)?;
@@ -6803,21 +6960,23 @@ fn emit_greedy_mdp_sweep(
             Some(PinnedLayer::Ram(v)) => std::mem::size_of_val(v.as_slice()) as u64,
             _ => 0,
         };
+        let next_resident_bytes = next_anonymous_bytes.checked_add(action_resident_bytes)
+            .context("greedy placement resident memory overflow")?;
         let mut use_ram_out = expected_layer_bytes == 0 || (!config.mmap_spill && config.ram_next_layer
             && expected_layer_bytes <= config.ram_next_layer_max_bytes
             && expected_layer_bytes.saturating_add(next_anonymous_bytes) <= config.ram_pair_max_bytes
-            && config.tuning.can_hold_layers(expected_layer_bytes, next_anonymous_bytes, qstate_count));
+            && config.tuning.can_hold_layers(expected_layer_bytes, next_resident_bytes, qstate_count));
         // Validate the membership and memory plan before allocating or truncating
         // an output. A single large block can require more task scratch than the
         // approximate RAM fit check; spill that layer instead of exceeding budget.
         let plan = match config.tuning.plan(
             &cur.metas, if use_ram_out { expected_layer_bytes } else { 0 },
-            next_anonymous_bytes, rayon::current_num_threads(), qstate_count,
+            next_resident_bytes, rayon::current_num_threads(), qstate_count,
         ) {
             Ok(plan) => plan,
             Err(_) if use_ram_out && expected_layer_bytes != 0 => {
                 use_ram_out = false;
-                config.tuning.plan(&cur.metas, 0, next_anonymous_bytes,
+                config.tuning.plan(&cur.metas, 0, next_resident_bytes,
                     rayon::current_num_threads(), qstate_count)?
             }
             Err(err) => return Err(err),
@@ -6863,14 +7022,14 @@ fn emit_greedy_mdp_sweep(
         // bounded batches so completed results do not accumulate for an entire layer.
         for batch in plan.ranges.chunks(plan.workers.saturating_mul(4).max(1)) {
             let results: Vec<Result<FullMdpChunkResult>> = pool.install(|| batch.par_iter().map(|range| {
-                compute_full_mdp_range_group_f32_rolling_sinks_with_l9_source(
+                compute_full_mdp_range_group_f32_rolling_sinks_with_action_cache(
                     layer, std::slice::from_ref(range), cur, out_file.as_ref(), ram_out, policy_out_file.as_ref(),
                     graph, qfwd, legal_placed, terminal_reset_avg,
                     next_layer_ref, next_values_path.as_deref(), next_values_ram, None,
                     gamma, plan.per_task_cache_bytes, qstate_count, config.sparse_lookup_max_count,
                     two_line_field, config.prewarm_field_targets, false,
                     config.collect_cache_stats, config.collect_action_stats,
-                    direct_l9_source,
+                    direct_l9_source, action_source,
                 )
             }).collect());
             for res in results { layer_stats.add(&res?.stats); }
@@ -6893,12 +7052,14 @@ fn emit_greedy_mdp_sweep(
         if let Some(pf) = policy_out_file.as_ref() {
             anyhow::ensure!(pf.metadata()?.len() == cur.total_states * 2, "emit policy output size mismatch layer={}", layer);
         }
-        eprintln!("emit-full-mdp-layers-from-l0 layer={} done states={} nonzero={} max_v={:.8} avg_v={:.8} actions={} missing_terms={} cache_hit={} cache_miss={} evict={} mat_states={} dense_blocks={} sparse_blocks={} bitmap_blocks={} bytes={} elapsed={:.3}s",
+        eprintln!("emit-full-mdp-layers-from-l0 layer={} done states={} nonzero={} max_v={:.8} avg_v={:.8} actions={} missing_terms={} cache_hit={} cache_miss={} evict={} mat_states={} dense_blocks={} sparse_blocks={} bitmap_blocks={} action_avg_hits={} action_avg_misses={} action_avg_collisions={} action_avg_saved_reveals={} action_avg_cache_bytes={} bytes={} elapsed={:.3}s",
             layer, layer_stats.total_states, layer_stats.nonzero, layer_stats.max_v,
             if layer_stats.total_states == 0 { 0.0 } else { layer_stats.sum_v / layer_stats.total_states as f64 },
             layer_stats.action_count, layer_stats.missing_next_terms, layer_stats.dense_cache_hits,
             layer_stats.dense_cache_misses, layer_stats.dense_evictions, layer_stats.dense_materialized_states,
             layer_stats.dense_blocks, layer_stats.sparse_blocks, layer_stats.bitmap_blocks,
+            layer_stats.action_avg_hits, layer_stats.action_avg_misses, layer_stats.action_avg_collisions,
+            layer_stats.action_avg_saved_reveals, layer_stats.action_avg_cache_bytes,
             if values_on_disk { expected_layer_bytes } else { 0 }, layer_start.elapsed().as_secs_f64());
 
         // Readers of the old next layer have completed. Release its mapping before
@@ -6939,12 +7100,24 @@ fn emit_greedy_mdp_sweep(
 #[path = "greedy_emit_tests.rs"]
 mod greedy_emit_tests;
 
+// This allowance is per scheduled task and is carved out of the task lookup
+// cap; zero preserves the default kernel and avoids constructing placement IDs.
+fn greedy_action_cache_bytes_from_env() -> Result<usize> {
+    let mib = match env::var("FULL_MDP_GREEDY_ACTION_CACHE_MIB") {
+        Ok(value) => value.parse::<usize>().context("invalid FULL_MDP_GREEDY_ACTION_CACHE_MIB")?,
+        Err(env::VarError::NotPresent) => 0,
+        Err(error) => return Err(error).context("invalid FULL_MDP_GREEDY_ACTION_CACHE_MIB"),
+    };
+    mib.checked_mul(1024 * 1024).context("FULL_MDP_GREEDY_ACTION_CACHE_MIB byte overflow")
+}
+
 fn run_emit_full_mdp_layers_from_l0(args: &[String]) -> Result<()> {
     if args.len() < 6 || args.len() > 9 {
         eprintln!("usage: {} emit-full-mdp-layers-from-l0 <graph.bin> <pruned_layer_dir> <l0_values.f32> <out_dir> [gamma=1.0] [dense_cache_gib=32] [policy_out_dir]", args[0]);
         eprintln!("  l0_values.f32 = converged layer0 file, e.g. <l0_out_dir>/layer0.values.f32.bin");
         eprintln!("  policy_out_dir: also record the greedy argmax action per state as layer{{L}}.policy.u16.bin (for fixed-policy Policy Iteration)");
         eprintln!("  FULL_MDP_POLICY_ONLY=1: retain policies and layer0, rolling intermediate values only");
+        eprintln!("  FULL_MDP_GREEDY_ACTION_CACHE_MIB=0: per-task greedy average reuse, carved out of the lookup cache (off by default)");
         std::process::exit(2);
     }
     let graph_path = PathBuf::from(&args[2]);
@@ -6959,6 +7132,7 @@ fn run_emit_full_mdp_layers_from_l0(args: &[String]) -> Result<()> {
         .map(|s| s != "0" && s.to_ascii_lowercase() != "false" && s.to_ascii_lowercase() != "no").unwrap_or(default);
     let policy_only = flag("FULL_MDP_POLICY_ONLY", false);
     anyhow::ensure!(!policy_only || policy_out_dir.is_some(), "FULL_MDP_POLICY_ONLY=1 requires policy_out_dir");
+    let greedy_action_cache_bytes = greedy_action_cache_bytes_from_env()?;
     let cache_cap_bytes = cache_gib.saturating_mul(1024).saturating_mul(1024).saturating_mul(1024);
     let config = GreedyEmitConfig {
         policy_only,
@@ -6983,6 +7157,17 @@ fn run_emit_full_mdp_layers_from_l0(args: &[String]) -> Result<()> {
     let qstate_count = q_index.states.len();
     if qstate_count != CHECK_QSTATE_COUNT { anyhow::bail!("unexpected qstate count {} != {}", qstate_count, CHECK_QSTATE_COUNT); }
     let legal_placed = build_qfwd_legal_placed_table(&qfwd, qstate_count);
+    let action_plan_started = Instant::now();
+    let action_pre_reveal = if greedy_action_cache_bytes > 0 {
+        Some(pre_reveal::PreRevealIndex::build(&q_index)?)
+    } else { None };
+    let action_placements = if let Some(pre) = action_pre_reveal.as_ref() {
+        Some(action_avg_cache::ValidatedPlacements::build(&q_index, &qfwd, pre)?)
+    } else { None };
+    if let Some(placements) = action_placements.as_ref() {
+        eprintln!("greedy-action-cache plan ready requested_bytes_per_task={} placement_resident_bytes={} build_seconds={:.9} boundary_reduced=0",
+            greedy_action_cache_bytes, placements.storage_bytes(), action_plan_started.elapsed().as_secs_f64());
+    }
     let two_line_field = graph.hash_lookup(crate::graph::TWO_LINE_HASH).context("TWO_LINE_HASH not found in graph")?;
     let full_layers: Vec<layer_store::FieldChainLayer> = (0usize..=9)
         .map(|layer| layer_store::FieldChainLayer::open_index_only(q_pruned_prefix(&pruned_dir, layer)))
@@ -6992,8 +7177,11 @@ fn run_emit_full_mdp_layers_from_l0(args: &[String]) -> Result<()> {
     eprintln!("emit-full-mdp-layers-from-l0 qstates={} gamma={} dense_cache_gib={} ram_next_layer={} policy_only={} l0={} out={} policy_out={}",
         qstate_count, gamma, cache_gib, config.ram_next_layer, config.policy_only, l0_values_path.display(), out_dir.display(),
         policy_out_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "-".to_string()));
-    emit_greedy_mdp_sweep(&graph, &qfwd, &legal_placed, &terminal_reset_avg, &full_layers,
-        &out_dir, policy_out_dir.as_deref(), qstate_count, two_line_field, gamma, &config)
+    emit_greedy_mdp_sweep_with_action_cache(&graph, &qfwd, &legal_placed, &terminal_reset_avg, &full_layers,
+        &out_dir, policy_out_dir.as_deref(), qstate_count, two_line_field, gamma, &config,
+        action_placements.as_ref().map(|placements| action_avg_cache::ActionSource {
+            placements, requested_bytes: greedy_action_cache_bytes,
+        }))
 }
 
 // Matrix-free Policy Iteration on the boundary map.
@@ -11473,6 +11661,7 @@ fn print_usage(program: &str) {
     eprintln!("  {program} pre-reveal-check");
     eprintln!("  {program} boundary-dag-probe <graph.bin> <pruned_layer_dir> <policy_dir|greedy> <layer=7|8|9> <max_roots> <l0.f32> [repetitions=10]");
     eprintln!("  {program} loop1-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <max_l8_states> [repetitions=5]");
+    eprintln!("  {program} greedy-cache-probe <graph.bin> <pruned> <values> <work_parent> [layer=5] [max_current_states=2000000] [ABBA_cycles=2] [cache_mib=768] [memo_mib=1] [start_field_index]");
     eprintln!("  {program} loop1-sparse-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <new-y.f32> [roots=32;0=all] [memo_mib=4096] [validation=reachable|full] [mode=affine|linear] [gamma=1] [workers=4]");
     eprintln!("  {program} full-l8-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> [repetitions=3] [Vstar_dir]");
     eprintln!("  {program} loop1-dag-probe <graph.bin> <pruned_layer_dir> <policy_dir> <l0.f32|zero> <new-y.f32> [roots=32;0=all] [memo_mib=256] [validation=reachable|full] [repetitions=5] [tail=l9|none] [baseline=full|1|0]");
@@ -11529,6 +11718,7 @@ fn main() -> Result<()> {
         #[cfg(unix)]
         "index-io-probe" => index_io_probe::run(&args),
         "action-cache-probe" => action_cache_probe::run(&args),
+        "greedy-cache-probe" => greedy_cache_probe::run(&args),
         "survival-krylov" => run_survival_krylov(&args),
         "boundary-cond-avg" => run_boundary_cond_avg(&args),
         "boundary-survival-rank" => run_boundary_survival_rank(&args),
