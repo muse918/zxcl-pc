@@ -7,8 +7,8 @@ use std::time::Instant;
 
 use crate::graph::FieldId;
 use crate::layer_store::{FieldChainLayer, FieldChainWriter};
-use crate::qgraph::QRevClassGraph;
 use crate::qstate::{enumerate_qstates, QStateIndex};
+use crate::qgraph::QRevClassGraph;
 use crate::rgraph::ReverseGraph;
 use crate::state::StateIndex;
 
@@ -62,11 +62,7 @@ pub fn convert_layer_to_q(
     println!("convert_q input_states={in_states}");
     println!("convert_q output_states={written}");
     println!("convert_q ratio={:.6}", written as f64 / in_states as f64);
-    println!(
-        "convert_q output_u24_membership_bytes={} ({:.3} GiB)",
-        written * 3,
-        written as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
+    println!("convert_q output_u24_membership_bytes={} ({:.3} GiB)", written * 3, written as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
     eprintln!("convert-q elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(written)
 }
@@ -88,15 +84,11 @@ pub fn sample_external_q_masked(
     'outer: for (bi, meta) in input.metas.iter().enumerate() {
         let chains = input.read_block_chains(bi);
         for qid in chains {
-            if processed >= sample_states {
-                break 'outer;
-            }
+            if processed >= sample_states { break 'outer; }
 
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let recs = qgraph.records_for(qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
+                if recs.is_empty() { continue; }
                 for &old_field in rgraph.edges(meta.field_id, placed) {
                     for rec in recs {
                         let ck = class_key(old_field, rec.bag_tail);
@@ -125,16 +117,8 @@ pub fn sample_external_q_masked(
 
     let unique: u64 = masks.values().map(|m| m.count_ones() as u64).sum();
     let class_count = masks.len() as u64;
-    let ratio = if raw == 0 {
-        0.0
-    } else {
-        unique as f64 / raw as f64
-    };
-    let raw_per_input = if processed == 0 {
-        0.0
-    } else {
-        raw as f64 / processed as f64
-    };
+    let ratio = if raw == 0 { 0.0 } else { unique as f64 / raw as f64 };
+    let raw_per_input = if processed == 0 { 0.0 } else { raw as f64 / processed as f64 };
     let est_raw = raw_per_input * input.total_states as f64;
     let est_unique = est_raw * ratio;
 
@@ -146,16 +130,8 @@ pub fn sample_external_q_masked(
     println!("qsample raw_per_input={raw_per_input:.3}");
     println!("qsample estimated_full_raw_pairs={:.0}", est_raw);
     println!("qsample estimated_full_unique_pairs={:.0}", est_unique);
-    println!(
-        "qsample estimated_full_u24_membership_bytes={:.0} ({:.3} GiB)",
-        est_unique * 3.0,
-        est_unique * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "qsample estimated_full_u24_plus_fp16_bytes={:.0} ({:.3} GiB)",
-        est_unique * 5.0,
-        est_unique * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
+    println!("qsample estimated_full_u24_membership_bytes={:.0} ({:.3} GiB)", est_unique * 3.0, est_unique * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("qsample estimated_full_u24_plus_fp16_bytes={:.0} ({:.3} GiB)", est_unique * 5.0, est_unique * 5.0 / 1024.0 / 1024.0 / 1024.0);
     eprintln!("qsample elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(())
 }
@@ -223,23 +199,12 @@ struct QClassShard {
 }
 
 impl QClassShard {
-    fn new() -> Self {
-        Self {
-            sorted: Vec::new(),
-            tail: Vec::new(),
-        }
-    }
-    fn push_or(&mut self, key: u64, mask: u32) {
-        self.tail.push((key, mask));
-    }
-    fn len(&self) -> usize {
-        self.sorted.len() + self.tail.len()
-    }
+    fn new() -> Self { Self { sorted: Vec::new(), tail: Vec::new() } }
+    fn push_or(&mut self, key: u64, mask: u32) { self.tail.push((key, mask)); }
+    fn len(&self) -> usize { self.sorted.len() + self.tail.len() }
 
     fn flush(&mut self) {
-        if self.tail.is_empty() {
-            return;
-        }
+        if self.tail.is_empty() { return; }
         self.tail.sort_unstable_by_key(|&(k, _)| k);
         let mut compact = Vec::<(u64, u32)>::with_capacity(self.tail.len());
         for (k, m) in self.tail.drain(..) {
@@ -256,9 +221,7 @@ impl QClassShard {
     }
 
     fn merge_sorted_vec(&mut self, other_sorted: Vec<(u64, u32)>) {
-        if other_sorted.is_empty() {
-            return;
-        }
+        if other_sorted.is_empty() { return; }
         self.flush();
         let sorted = std::mem::take(&mut self.sorted);
         self.sorted = merge_sorted_class_vecs(sorted, other_sorted);
@@ -271,23 +234,15 @@ impl QClassShard {
 }
 
 fn merge_sorted_class_vecs(a: Vec<(u64, u32)>, b: Vec<(u64, u32)>) -> Vec<(u64, u32)> {
-    if a.is_empty() {
-        return b;
-    }
-    if b.is_empty() {
-        return a;
-    }
+    if a.is_empty() { return b; }
+    if b.is_empty() { return a; }
     let mut out = Vec::<(u64, u32)>::with_capacity(a.len() + b.len());
     let (mut i, mut j) = (0usize, 0usize);
     while i < a.len() && j < b.len() {
         let (k, m) = if a[i].0 <= b[j].0 {
-            let v = a[i];
-            i += 1;
-            v
+            let v = a[i]; i += 1; v
         } else {
-            let v = b[j];
-            j += 1;
-            v
+            let v = b[j]; j += 1; v
         };
         if let Some(last) = out.last_mut() {
             if last.0 == k {
@@ -298,24 +253,16 @@ fn merge_sorted_class_vecs(a: Vec<(u64, u32)>, b: Vec<(u64, u32)>) -> Vec<(u64, 
         out.push((k, m));
     }
     while i < a.len() {
-        let (k, m) = a[i];
-        i += 1;
+        let (k, m) = a[i]; i += 1;
         if let Some(last) = out.last_mut() {
-            if last.0 == k {
-                last.1 |= m;
-                continue;
-            }
+            if last.0 == k { last.1 |= m; continue; }
         }
         out.push((k, m));
     }
     while j < b.len() {
-        let (k, m) = b[j];
-        j += 1;
+        let (k, m) = b[j]; j += 1;
         if let Some(last) = out.last_mut() {
-            if last.0 == k {
-                last.1 |= m;
-                continue;
-            }
+            if last.0 == k { last.1 |= m; continue; }
         }
         out.push((k, m));
     }
@@ -333,19 +280,10 @@ struct QLayerPartial {
 impl QLayerPartial {
     fn empty() -> Self {
         let mut shards = Vec::with_capacity(Q_SHARDS);
-        for _ in 0..Q_SHARDS {
-            shards.push(QClassShard::new());
-        }
-        Self {
-            raw: 0,
-            local_chain_masked: 0,
-            class_count: 0,
-            shards,
-        }
+        for _ in 0..Q_SHARDS { shards.push(QClassShard::new()); }
+        Self { raw: 0, local_chain_masked: 0, class_count: 0, shards }
     }
-    fn stored_len(&self) -> usize {
-        self.shards.iter().map(|s| s.len()).sum()
-    }
+    fn stored_len(&self) -> usize { self.shards.iter().map(|s| s.len()).sum() }
 }
 
 fn merge_q_partials(mut a: QLayerPartial, mut b: QLayerPartial) -> QLayerPartial {
@@ -376,9 +314,7 @@ fn emit_grouped_field(
 ) {
     for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
         let map = &mut by_piece[placed as usize];
-        if map.is_empty() {
-            continue;
-        }
+        if map.is_empty() { continue; }
         let parents = rgraph.edges(child_field, placed);
         if parents.is_empty() {
             map.clear();
@@ -416,18 +352,12 @@ fn process_q_chunk_class_grouped(
         let (child_field, _) = unpack_q_pair_key(chunk[i]);
         while i < chunk.len() {
             let (f, child_qid) = unpack_q_pair_key(chunk[i]);
-            if f != child_field {
-                break;
-            }
+            if f != child_field { break; }
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let recs = qgraph.records_for(child_qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
+                if recs.is_empty() { continue; }
                 let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                if parent_count == 0 {
-                    continue;
-                }
+                if parent_count == 0 { continue; }
                 let map = &mut by_piece[placed as usize];
                 for rec in recs {
                     partial.raw += rec.avail_mask.count_ones() as u64 * parent_count;
@@ -439,17 +369,11 @@ fn process_q_chunk_class_grouped(
         emit_grouped_field(rgraph, child_field, &mut by_piece, &mut partial);
     }
 
-    for shard in &mut partial.shards {
-        shard.flush();
-    }
+    for shard in &mut partial.shards { shard.flush(); }
 
     let done = done_chunks.fetch_add(1, Ordering::Relaxed) + 1;
     let stored_classes = partial.stored_len();
-    let ratio = if partial.raw == 0 {
-        0.0
-    } else {
-        partial.local_chain_masked as f64 / partial.raw as f64
-    };
+    let ratio = if partial.raw == 0 { 0.0 } else { partial.local_chain_masked as f64 / partial.raw as f64 };
     eprintln!(
         "  qclass chunk {}/{} done_global={}/{} raw={} local_chain_masked={} classes={} stored_classes={} ratio={:.3} elapsed={:.1}s total={:.1}s",
         chunk_idx + 1,
@@ -476,32 +400,24 @@ fn materialize_class_shards(
     let start = Instant::now();
     eprintln!("building compact qid lookup table...");
     let qid_lookup = build_qid_lookup(q_index);
-    eprintln!(
-        "built qid lookup table entries={} bytes={} elapsed={:.3}s",
-        qid_lookup.len(),
-        qid_lookup.len() * std::mem::size_of::<u32>(),
-        start.elapsed().as_secs_f64()
-    );
+    eprintln!("built qid lookup table entries={} bytes={} elapsed={:.3}s", qid_lookup.len(), qid_lookup.len() * std::mem::size_of::<u32>(), start.elapsed().as_secs_f64());
 
     out.clear();
     let mut qids = Vec::<u32>::new();
     let mut current_field = None::<FieldId>;
     let mut total = 0usize;
 
-    let flush_field =
-        |field: FieldId, qids: &mut Vec<u32>, out: &mut Vec<u64>, total: &mut usize| {
-            if qids.is_empty() {
-                return;
-            }
-            qids.sort_unstable();
-            qids.dedup();
-            *total += qids.len();
-            out.reserve(qids.len());
-            for &qid in qids.iter() {
-                out.push(q_pair_key(field, qid));
-            }
-            qids.clear();
-        };
+    let flush_field = |field: FieldId, qids: &mut Vec<u32>, out: &mut Vec<u64>, total: &mut usize| {
+        if qids.is_empty() { return; }
+        qids.sort_unstable();
+        qids.dedup();
+        *total += qids.len();
+        out.reserve(qids.len());
+        for &qid in qids.iter() {
+            out.push(q_pair_key(field, qid));
+        }
+        qids.clear();
+    };
 
     for shard in shards {
         let classes = shard.into_sorted();
@@ -532,11 +448,7 @@ fn materialize_class_shards(
     }
     debug_assert_eq!(out.len(), total);
     debug_assert!(out.windows(2).all(|w| w[0] < w[1]));
-    eprintln!(
-        "materialized q pairs={} elapsed={:.3}s",
-        total,
-        start.elapsed().as_secs_f64()
-    );
+    eprintln!("materialized q pairs={} elapsed={:.3}s", total, start.elapsed().as_secs_f64());
     total
 }
 
@@ -584,24 +496,14 @@ pub fn gen_prev_q_layer_masked(
     let raw = partial.raw;
     let local_masked_unique = partial.local_chain_masked;
     let mut shards = partial.shards;
-    for shard in &mut shards {
-        shard.flush();
-    }
+    for shard in &mut shards { shard.flush(); }
     let stored_classes = shards.iter().map(|s| s.sorted.len()).sum::<usize>();
     eprintln!("q final stored_classes={stored_classes}");
 
     let deduped = materialize_class_shards(q_index, shards, prev_good);
-    eprintln!(
-        "q class-masked grouped layer gen total elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    eprintln!("q class-masked grouped layer gen total elapsed={:.3}s", start.elapsed().as_secs_f64());
 
-    QLayerGenStats {
-        raw,
-        local_masked_unique,
-        deduped,
-        removed_dupes: raw - deduped as u64,
-    }
+    QLayerGenStats { raw, local_masked_unique, deduped, removed_dupes: raw - deduped as u64 }
 }
 
 pub fn make_q_terminal_layer(terminal_field: FieldId, q_index: &QStateIndex) -> Vec<u64> {
@@ -631,9 +533,7 @@ pub fn print_q_product_layer_stats(keys: &[u64], depth: usize) {
             graph_nodes += 1;
             last_field = Some(field);
         }
-        if field == crate::graph::EMPTY_FIELD_ID {
-            success_field_keys += 1;
-        }
+        if field == crate::graph::EMPTY_FIELD_ID { success_field_keys += 1; }
         min_field = min_field.min(field);
         max_field = max_field.max(field);
     }
@@ -662,11 +562,7 @@ pub struct QExternalClassConfig {
 
 impl Default for QExternalClassConfig {
     fn default() -> Self {
-        Self {
-            bucket_bits: 12,
-            flush_records: 4_000_000,
-            merge_sub_bits: 0,
-        }
+        Self { bucket_bits: 12, flush_records: 4_000_000, merge_sub_bits: 0 }
     }
 }
 
@@ -678,9 +574,7 @@ fn q_bucket_of_class_key(key: u64, bucket_bits: usize) -> usize {
 
 #[inline]
 fn q_subshard_of_class_key(key: u64, bucket_bits: usize, sub_bits: usize) -> usize {
-    if sub_bits == 0 {
-        return 0;
-    }
+    if sub_bits == 0 { return 0; }
     let field = (key >> 32) as u64;
     let shift = Q_FIELD_ID_BITS - bucket_bits as u64 - sub_bits as u64;
     ((field >> shift) as usize) & ((1usize << sub_bits) - 1)
@@ -727,9 +621,7 @@ fn materialize_class_records(
             let avail = m.trailing_zeros() as u8;
             m &= m - 1;
             let qid = qid_from_lookup(qid_lookup, bag_tail, avail);
-            if qid != QID_MISSING {
-                qids.push(qid);
-            }
+            if qid != QID_MISSING { qids.push(qid); }
         }
     }
     if let Some(f) = current_field {
@@ -746,13 +638,8 @@ fn materialize_class_records(
 
 fn append_class_records(path: &Path, records: &[(u64, u32)]) -> Result<()> {
     use std::io::Write;
-    if records.is_empty() {
-        return Ok(());
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    if records.is_empty() { return Ok(()); }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
     let mut buf = Vec::<u8>::with_capacity(records.len() * 12);
     for &(k, m) in records {
         buf.extend_from_slice(&k.to_le_bytes());
@@ -762,28 +649,18 @@ fn append_class_records(path: &Path, records: &[(u64, u32)]) -> Result<()> {
     Ok(())
 }
 
-fn flush_class_buffers(
-    work_dir: &Path,
-    buffers: &mut [Vec<(u64, u32)>],
-    total_buffered: &mut usize,
-) -> Result<()> {
+fn flush_class_buffers(work_dir: &Path, buffers: &mut [Vec<(u64, u32)>], total_buffered: &mut usize) -> Result<()> {
     let start = Instant::now();
     let mut flushed = 0usize;
     for (b, buf) in buffers.iter_mut().enumerate() {
-        if buf.is_empty() {
-            continue;
-        }
+        if buf.is_empty() { continue; }
         let path = work_dir.join(format!("qclass_bucket_{b:04}.bin"));
         append_class_records(&path, buf)?;
         flushed += buf.len();
         buf.clear();
     }
     *total_buffered = 0;
-    eprintln!(
-        "  flushed qclass records={} elapsed={:.3}s",
-        flushed,
-        start.elapsed().as_secs_f64()
-    );
+    eprintln!("  flushed qclass records={} elapsed={:.3}s", flushed, start.elapsed().as_secs_f64());
     Ok(())
 }
 
@@ -800,15 +677,10 @@ pub fn external_step_q_class(
     use std::io::{BufWriter, Read, Write};
     use std::sync::{Arc, Mutex};
 
-    if config.bucket_bits == 0
-        || config.bucket_bits > 16
-        || config.bucket_bits as u64 > Q_FIELD_ID_BITS
-    {
+    if config.bucket_bits == 0 || config.bucket_bits > 16 || config.bucket_bits as u64 > Q_FIELD_ID_BITS {
         bail!("bucket_bits must be in 1..=16 and <= {Q_FIELD_ID_BITS}");
     }
-    if config.merge_sub_bits > 12
-        || (config.bucket_bits + config.merge_sub_bits) as u64 > Q_FIELD_ID_BITS
-    {
+    if config.merge_sub_bits > 12 || (config.bucket_bits + config.merge_sub_bits) as u64 > Q_FIELD_ID_BITS {
         bail!("merge_sub_bits must be <=12 and bucket_bits + merge_sub_bits <= {Q_FIELD_ID_BITS}");
     }
     std::fs::create_dir_all(work_dir)?;
@@ -838,8 +710,8 @@ pub fn external_step_q_class(
     let mut writer_vec = Vec::with_capacity(bucket_count);
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_bucket_{b:04}.bin"));
-        let f =
-            std::fs::File::create(&path).with_context(|| format!("create {}", path.display()))?;
+        let f = std::fs::File::create(&path)
+            .with_context(|| format!("create {}", path.display()))?;
         writer_vec.push(Mutex::new(BufWriter::with_capacity(8 * 1024 * 1024, f)));
     }
     let writers = Arc::new(writer_vec);
@@ -859,9 +731,7 @@ pub fn external_step_q_class(
     ) -> Result<usize> {
         let mut flushed = 0usize;
         for (b, buf) in buffers.iter_mut().enumerate() {
-            if buf.is_empty() {
-                continue;
-            }
+            if buf.is_empty() { continue; }
             let mut w = writers[b].lock().expect("bucket writer mutex poisoned");
             let mut bytes = Vec::<u8>::with_capacity(buf.len() * 12);
             for &(k, m) in buf.iter() {
@@ -896,13 +766,9 @@ pub fn external_step_q_class(
                 for qid in qids {
                     for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                         let recs = qgraph.records_for(qid, placed);
-                        if recs.is_empty() {
-                            continue;
-                        }
+                        if recs.is_empty() { continue; }
                         let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                        if parent_count == 0 {
-                            continue;
-                        }
+                        if parent_count == 0 { continue; }
                         let map = &mut by_piece[placed as usize];
                         for rec in recs {
                             stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
@@ -913,9 +779,7 @@ pub fn external_step_q_class(
 
                 for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                     let map = &mut by_piece[placed as usize];
-                    if map.is_empty() {
-                        continue;
-                    }
+                    if map.is_empty() { continue; }
                     let parents = rgraph.edges(child_field, placed);
                     for &old_field in parents {
                         for (&bag_tail, &mask) in map.iter() {
@@ -931,13 +795,11 @@ pub fn external_step_q_class(
                 }
 
                 if total_buffered >= config.flush_records {
-                    stats.flushed_records +=
-                        flush_parallel_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+                    stats.flushed_records += flush_parallel_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
                 }
             }
 
-            stats.flushed_records +=
-                flush_parallel_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+            stats.flushed_records += flush_parallel_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
             let done = done_blocks.fetch_add(chunk.len(), Ordering::Relaxed) + chunk.len();
             if done % 1024 < block_chunk || done == input.metas.len() {
                 eprintln!(
@@ -973,11 +835,7 @@ pub fn external_step_q_class(
     eprintln!("building compact qid lookup table for materialization...");
     let lookup_start = Instant::now();
     let qid_lookup = build_qid_lookup(q_index);
-    eprintln!(
-        "built qid lookup bytes={} elapsed={:.3}s",
-        qid_lookup.len() * std::mem::size_of::<u32>(),
-        lookup_start.elapsed().as_secs_f64()
-    );
+    eprintln!("built qid lookup bytes={} elapsed={:.3}s", qid_lookup.len() * std::mem::size_of::<u32>(), lookup_start.elapsed().as_secs_f64());
 
     let mut writer = FieldChainWriter::create(output_prefix)?;
     let mut written = 0u64;
@@ -986,9 +844,7 @@ pub fn external_step_q_class(
 
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_bucket_{b:04}.bin"));
-        if !path.exists() {
-            continue;
-        }
+        if !path.exists() { continue; }
         let file_len = std::fs::metadata(&path)?.len();
         if file_len == 0 {
             let _ = std::fs::remove_file(&path);
@@ -1002,11 +858,7 @@ pub fn external_step_q_class(
                 .with_context(|| format!("open {}", path.display()))?
                 .read_to_end(&mut bytes)?;
             if bytes.len() % 12 != 0 {
-                bail!(
-                    "bucket {} size {} is not divisible by 12",
-                    path.display(),
-                    bytes.len()
-                );
+                bail!("bucket {} size {} is not divisible by 12", path.display(), bytes.len());
             }
             let rec_count = bytes.len() / 12;
             let mut recs = Vec::<(u64, u32)>::with_capacity(rec_count);
@@ -1018,8 +870,7 @@ pub fn external_step_q_class(
                 recs.push((k, m));
             }
             drop(bytes);
-            bucket_classes +=
-                materialize_class_records(recs, &qid_lookup, &mut writer, &mut qids, &mut written)?;
+            bucket_classes += materialize_class_records(recs, &qid_lookup, &mut writer, &mut qids, &mut written)?;
         } else {
             let sub_count = 1usize << config.merge_sub_bits;
             let sub_dir = work_dir.join(format!("qclass_bucket_{b:04}_sub"));
@@ -1033,37 +884,30 @@ pub fn external_step_q_class(
                 sub_writers.push(BufWriter::with_capacity(8 * 1024 * 1024, f));
             }
 
-            let mut f =
-                std::fs::File::open(&path).with_context(|| format!("open {}", path.display()))?;
+            let mut f = std::fs::File::open(&path)
+                .with_context(|| format!("open {}", path.display()))?;
             let mut read_buf = vec![0u8; 64 * 1024 * 1024];
             let mut carry = Vec::<u8>::new();
             loop {
                 let n = f.read(&mut read_buf)?;
-                if n == 0 {
-                    break;
-                }
+                if n == 0 { break; }
                 carry.extend_from_slice(&read_buf[..n]);
                 let usable = (carry.len() / 12) * 12;
                 let mut pos = 0usize;
                 while pos < usable {
                     let k = u64::from_le_bytes(carry[pos..pos + 8].try_into().unwrap());
                     let m = u32::from_le_bytes(carry[pos + 8..pos + 12].try_into().unwrap());
-                    let sidx =
-                        q_subshard_of_class_key(k, config.bucket_bits, config.merge_sub_bits);
+                    let sidx = q_subshard_of_class_key(k, config.bucket_bits, config.merge_sub_bits);
                     sub_writers[sidx].write_all(&k.to_le_bytes())?;
                     sub_writers[sidx].write_all(&m.to_le_bytes())?;
                     pos += 12;
                 }
-                if usable > 0 {
-                    carry.drain(..usable);
-                }
+                if usable > 0 { carry.drain(..usable); }
             }
             if !carry.is_empty() {
                 bail!("bucket {} size is not divisible by 12", path.display());
             }
-            for w in sub_writers.iter_mut() {
-                w.flush()?;
-            }
+            for w in sub_writers.iter_mut() { w.flush()?; }
             drop(sub_writers);
 
             for sidx in 0..sub_count {
@@ -1078,11 +922,7 @@ pub fn external_step_q_class(
                     .with_context(|| format!("open {}", sp.display()))?
                     .read_to_end(&mut bytes)?;
                 if bytes.len() % 12 != 0 {
-                    bail!(
-                        "subshard {} size {} is not divisible by 12",
-                        sp.display(),
-                        bytes.len()
-                    );
+                    bail!("subshard {} size {} is not divisible by 12", sp.display(), bytes.len());
                 }
                 let rec_count = bytes.len() / 12;
                 let mut recs = Vec::<(u64, u32)>::with_capacity(rec_count);
@@ -1094,13 +934,7 @@ pub fn external_step_q_class(
                     recs.push((k, m));
                 }
                 drop(bytes);
-                bucket_classes += materialize_class_records(
-                    recs,
-                    &qid_lookup,
-                    &mut writer,
-                    &mut qids,
-                    &mut written,
-                )?;
+                bucket_classes += materialize_class_records(recs, &qid_lookup, &mut writer, &mut qids, &mut written)?;
                 let _ = std::fs::remove_file(&sp);
             }
             let _ = std::fs::remove_dir(&sub_dir);
@@ -1126,26 +960,13 @@ pub fn external_step_q_class(
     println!("q_external_class emitted_class_records={emitted_records}");
     println!("q_external_class global_classes={global_classes}");
     println!("q_external_class output_states={finished}");
-    println!(
-        "q_external_class removed_dupes={}",
-        raw.saturating_sub(finished)
-    );
-    println!(
-        "q_external_class output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "q_external_class output_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        finished * 5,
-        finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external class step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_class removed_dupes={}", raw.saturating_sub(finished));
+    println!("q_external_class output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("q_external_class output_u24_plus_fp16_bytes={} ({:.3} GiB)", finished * 5, finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external class step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
+
 
 fn materialize_field_partitioned_bucket(
     bucket_index: usize,
@@ -1158,16 +979,10 @@ fn materialize_field_partitioned_bucket(
 ) -> Result<u64> {
     use anyhow::bail;
     if bytes.len() % 12 != 0 {
-        bail!(
-            "bucket {} size {} is not divisible by 12",
-            bucket_index,
-            bytes.len()
-        );
+        bail!("bucket {} size {} is not divisible by 12", bucket_index, bytes.len());
     }
     let rec_count = bytes.len() / 12;
-    if rec_count == 0 {
-        return Ok(0);
-    }
+    if rec_count == 0 { return Ok(0); }
 
     let field_low_bits = (Q_FIELD_ID_BITS as usize).saturating_sub(bucket_bits);
     let fields_in_bucket = 1usize << field_low_bits;
@@ -1212,9 +1027,7 @@ fn materialize_field_partitioned_bucket(
     for local in 0..fields_in_bucket {
         let begin = offsets[local];
         let end = offsets[local + 1];
-        if begin == end {
-            continue;
-        }
+        if begin == end { continue; }
         let field = first_field + local as u32;
         let slice = &mut field_recs[begin..end];
         slice.sort_unstable_by_key(|&(bag_tail, _)| bag_tail);
@@ -1234,9 +1047,7 @@ fn materialize_field_partitioned_bucket(
                 let avail = m.trailing_zeros() as u8;
                 m &= m - 1;
                 let qid = qid_from_lookup(qid_lookup, bag_tail, avail);
-                if qid != QID_MISSING {
-                    qids.push(qid);
-                }
+                if qid != QID_MISSING { qids.push(qid); }
             }
         }
         // Writer requires qids sorted within each field. After (bag_tail,avail)
@@ -1251,6 +1062,7 @@ fn materialize_field_partitioned_bucket(
     qids.clear();
     Ok(classes)
 }
+
 
 /// Build an equivalence class for each concrete child qid based on the exact
 /// reverse-class output it can generate for all placed pieces.  Two qids with
@@ -1298,10 +1110,7 @@ pub fn external_step_q_class_fieldreduce(
     use std::io::{BufWriter, Read, Write};
     use std::sync::{Arc, Mutex};
 
-    if config.bucket_bits == 0
-        || config.bucket_bits > 16
-        || config.bucket_bits as u64 > Q_FIELD_ID_BITS
-    {
+    if config.bucket_bits == 0 || config.bucket_bits > 16 || config.bucket_bits as u64 > Q_FIELD_ID_BITS {
         bail!("bucket_bits must be in 1..=16 and <= {Q_FIELD_ID_BITS}");
     }
     // This path is already field-range bucketed and then field-local partitioned.
@@ -1333,19 +1142,14 @@ pub fn external_step_q_class_fieldreduce(
     let mut writer_vec = Vec::with_capacity(bucket_count);
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_field_bucket_{b:04}.bin"));
-        let f =
-            std::fs::File::create(&path).with_context(|| format!("create {}", path.display()))?;
+        let f = std::fs::File::create(&path)
+            .with_context(|| format!("create {}", path.display()))?;
         writer_vec.push(Mutex::new(BufWriter::with_capacity(8 * 1024 * 1024, f)));
     }
     let writers = Arc::new(writer_vec);
 
     #[derive(Default, Clone, Copy)]
-    struct Stats {
-        raw: u64,
-        local_chain_masked: u64,
-        emitted_records: u64,
-        flushed_records: u64,
-    }
+    struct Stats { raw: u64, local_chain_masked: u64, emitted_records: u64, flushed_records: u64 }
 
     fn flush_field_buffers(
         writers: &[Mutex<BufWriter<std::fs::File>>],
@@ -1354,12 +1158,8 @@ pub fn external_step_q_class_fieldreduce(
     ) -> Result<usize> {
         let mut flushed = 0usize;
         for (b, buf) in buffers.iter_mut().enumerate() {
-            if buf.is_empty() {
-                continue;
-            }
-            let mut w = writers[b]
-                .lock()
-                .expect("field bucket writer mutex poisoned");
+            if buf.is_empty() { continue; }
+            let mut w = writers[b].lock().expect("field bucket writer mutex poisoned");
             let mut bytes = Vec::<u8>::with_capacity(buf.len() * 12);
             for &(k, m) in buf.iter() {
                 bytes.extend_from_slice(&k.to_le_bytes());
@@ -1392,13 +1192,9 @@ pub fn external_step_q_class_fieldreduce(
                 for qid in qids_in {
                     for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                         let recs = qgraph.records_for(qid, placed);
-                        if recs.is_empty() {
-                            continue;
-                        }
+                        if recs.is_empty() { continue; }
                         let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                        if parent_count == 0 {
-                            continue;
-                        }
+                        if parent_count == 0 { continue; }
                         let map = &mut by_piece[placed as usize];
                         for rec in recs {
                             stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
@@ -1409,9 +1205,7 @@ pub fn external_step_q_class_fieldreduce(
 
                 for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                     let map = &mut by_piece[placed as usize];
-                    if map.is_empty() {
-                        continue;
-                    }
+                    if map.is_empty() { continue; }
                     let parents = rgraph.edges(child_field, placed);
                     for &old_field in parents {
                         for (&bag_tail, &mask) in map.iter() {
@@ -1427,12 +1221,10 @@ pub fn external_step_q_class_fieldreduce(
                 }
 
                 if total_buffered >= config.flush_records {
-                    stats.flushed_records +=
-                        flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+                    stats.flushed_records += flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
                 }
             }
-            stats.flushed_records +=
-                flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+            stats.flushed_records += flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
             let done = done_blocks.fetch_add(chunk.len(), Ordering::Relaxed) + chunk.len();
             if done % 1024 < block_chunk || done == input.metas.len() {
                 eprintln!(
@@ -1450,11 +1242,7 @@ pub fn external_step_q_class_fieldreduce(
     let local_chain_masked: u64 = stats_vec.iter().map(|s| s.local_chain_masked).sum();
     let emitted_records: u64 = stats_vec.iter().map(|s| s.emitted_records).sum();
     let flushed_records: u64 = stats_vec.iter().map(|s| s.flushed_records).sum();
-    for w in writers.iter() {
-        w.lock()
-            .expect("field bucket writer mutex poisoned")
-            .flush()?;
-    }
+    for w in writers.iter() { w.lock().expect("field bucket writer mutex poisoned").flush()?; }
     drop(writers);
 
     eprintln!(
@@ -1465,11 +1253,7 @@ pub fn external_step_q_class_fieldreduce(
     eprintln!("building compact qid lookup table for fieldreduce materialization...");
     let lookup_start = Instant::now();
     let qid_lookup = build_qid_lookup(q_index);
-    eprintln!(
-        "built qid lookup bytes={} elapsed={:.3}s",
-        qid_lookup.len() * std::mem::size_of::<u32>(),
-        lookup_start.elapsed().as_secs_f64()
-    );
+    eprintln!("built qid lookup bytes={} elapsed={:.3}s", qid_lookup.len() * std::mem::size_of::<u32>(), lookup_start.elapsed().as_secs_f64());
 
     let mut writer = FieldChainWriter::create(output_prefix)?;
     let mut written = 0u64;
@@ -1478,36 +1262,21 @@ pub fn external_step_q_class_fieldreduce(
 
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_field_bucket_{b:04}.bin"));
-        if !path.exists() {
-            continue;
-        }
+        if !path.exists() { continue; }
         let file_len = std::fs::metadata(&path)?.len();
-        if file_len == 0 {
-            let _ = std::fs::remove_file(&path);
-            continue;
-        }
+        if file_len == 0 { let _ = std::fs::remove_file(&path); continue; }
         let mut bytes = Vec::<u8>::new();
         std::fs::File::open(&path)
             .with_context(|| format!("open {}", path.display()))?
             .read_to_end(&mut bytes)?;
         let bucket_classes = materialize_field_partitioned_bucket(
-            b,
-            config.bucket_bits,
-            bytes,
-            &qid_lookup,
-            &mut writer,
-            &mut qids,
-            &mut written,
+            b, config.bucket_bits, bytes, &qid_lookup, &mut writer, &mut qids, &mut written,
         )?;
         global_classes += bucket_classes;
         if (b + 1) % 64 == 0 || b + 1 == bucket_count {
             eprintln!(
                 "  fieldreduce bucket {}/{} classes={} written_so_far={} elapsed={:.1}s",
-                b + 1,
-                bucket_count,
-                bucket_classes,
-                written,
-                start.elapsed().as_secs_f64()
+                b + 1, bucket_count, bucket_classes, written, start.elapsed().as_secs_f64()
             );
         }
         let _ = std::fs::remove_file(&path);
@@ -1520,14 +1289,8 @@ pub fn external_step_q_class_fieldreduce(
     println!("q_external_class_fieldreduce local_chain_masked={local_chain_masked}");
     println!("q_external_class_fieldreduce global_classes={global_classes}");
     println!("q_external_class_fieldreduce output_states={finished}");
-    println!(
-        "q_external_class_fieldreduce removed_dupes={}",
-        raw.saturating_sub(finished)
-    );
-    eprintln!(
-        "q external class fieldreduce step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_class_fieldreduce removed_dupes={}", raw.saturating_sub(finished));
+    eprintln!("q external class fieldreduce step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
 pub fn external_step_q_class_fieldreduce_preq(
@@ -1543,10 +1306,7 @@ pub fn external_step_q_class_fieldreduce_preq(
     use std::io::{BufWriter, Read, Write};
     use std::sync::{Arc, Mutex};
 
-    if config.bucket_bits == 0
-        || config.bucket_bits > 16
-        || config.bucket_bits as u64 > Q_FIELD_ID_BITS
-    {
+    if config.bucket_bits == 0 || config.bucket_bits > 16 || config.bucket_bits as u64 > Q_FIELD_ID_BITS {
         bail!("bucket_bits must be in 1..=16 and <= {Q_FIELD_ID_BITS}");
     }
     // This path is already field-range bucketed and then field-local partitioned.
@@ -1590,19 +1350,14 @@ pub fn external_step_q_class_fieldreduce_preq(
     let mut writer_vec = Vec::with_capacity(bucket_count);
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_field_bucket_{b:04}.bin"));
-        let f =
-            std::fs::File::create(&path).with_context(|| format!("create {}", path.display()))?;
+        let f = std::fs::File::create(&path)
+            .with_context(|| format!("create {}", path.display()))?;
         writer_vec.push(Mutex::new(BufWriter::with_capacity(8 * 1024 * 1024, f)));
     }
     let writers = Arc::new(writer_vec);
 
     #[derive(Default, Clone, Copy)]
-    struct Stats {
-        raw: u64,
-        local_chain_masked: u64,
-        emitted_records: u64,
-        flushed_records: u64,
-    }
+    struct Stats { raw: u64, local_chain_masked: u64, emitted_records: u64, flushed_records: u64 }
 
     fn flush_field_buffers(
         writers: &[Mutex<BufWriter<std::fs::File>>],
@@ -1611,12 +1366,8 @@ pub fn external_step_q_class_fieldreduce_preq(
     ) -> Result<usize> {
         let mut flushed = 0usize;
         for (b, buf) in buffers.iter_mut().enumerate() {
-            if buf.is_empty() {
-                continue;
-            }
-            let mut w = writers[b]
-                .lock()
-                .expect("field bucket writer mutex poisoned");
+            if buf.is_empty() { continue; }
+            let mut w = writers[b].lock().expect("field bucket writer mutex poisoned");
             let mut bytes = Vec::<u8>::with_capacity(buf.len() * 12);
             for &(k, m) in buf.iter() {
                 bytes.extend_from_slice(&k.to_le_bytes());
@@ -1666,13 +1417,9 @@ pub fn external_step_q_class_fieldreduce_preq(
                 for qid in unique_rep_qids.iter().copied() {
                     for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                         let recs = qgraph.records_for(qid, placed);
-                        if recs.is_empty() {
-                            continue;
-                        }
+                        if recs.is_empty() { continue; }
                         let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                        if parent_count == 0 {
-                            continue;
-                        }
+                        if parent_count == 0 { continue; }
                         let map = &mut by_piece[placed as usize];
                         for rec in recs {
                             stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
@@ -1683,9 +1430,7 @@ pub fn external_step_q_class_fieldreduce_preq(
 
                 for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                     let map = &mut by_piece[placed as usize];
-                    if map.is_empty() {
-                        continue;
-                    }
+                    if map.is_empty() { continue; }
                     let parents = rgraph.edges(child_field, placed);
                     for &old_field in parents {
                         for (&bag_tail, &mask) in map.iter() {
@@ -1701,12 +1446,10 @@ pub fn external_step_q_class_fieldreduce_preq(
                 }
 
                 if total_buffered >= config.flush_records {
-                    stats.flushed_records +=
-                        flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+                    stats.flushed_records += flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
                 }
             }
-            stats.flushed_records +=
-                flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
+            stats.flushed_records += flush_field_buffers(&writers, &mut buffers, &mut total_buffered)? as u64;
             let done = done_blocks.fetch_add(chunk.len(), Ordering::Relaxed) + chunk.len();
             if done % 1024 < block_chunk || done == input.metas.len() {
                 eprintln!(
@@ -1724,11 +1467,7 @@ pub fn external_step_q_class_fieldreduce_preq(
     let local_chain_masked: u64 = stats_vec.iter().map(|s| s.local_chain_masked).sum();
     let emitted_records: u64 = stats_vec.iter().map(|s| s.emitted_records).sum();
     let flushed_records: u64 = stats_vec.iter().map(|s| s.flushed_records).sum();
-    for w in writers.iter() {
-        w.lock()
-            .expect("field bucket writer mutex poisoned")
-            .flush()?;
-    }
+    for w in writers.iter() { w.lock().expect("field bucket writer mutex poisoned").flush()?; }
     drop(writers);
 
     eprintln!(
@@ -1739,11 +1478,7 @@ pub fn external_step_q_class_fieldreduce_preq(
     eprintln!("building compact qid lookup table for fieldreduce materialization...");
     let lookup_start = Instant::now();
     let qid_lookup = build_qid_lookup(q_index);
-    eprintln!(
-        "built qid lookup bytes={} elapsed={:.3}s",
-        qid_lookup.len() * std::mem::size_of::<u32>(),
-        lookup_start.elapsed().as_secs_f64()
-    );
+    eprintln!("built qid lookup bytes={} elapsed={:.3}s", qid_lookup.len() * std::mem::size_of::<u32>(), lookup_start.elapsed().as_secs_f64());
 
     let mut writer = FieldChainWriter::create(output_prefix)?;
     let mut written = 0u64;
@@ -1752,36 +1487,21 @@ pub fn external_step_q_class_fieldreduce_preq(
 
     for b in 0..bucket_count {
         let path = work_dir.join(format!("qclass_field_bucket_{b:04}.bin"));
-        if !path.exists() {
-            continue;
-        }
+        if !path.exists() { continue; }
         let file_len = std::fs::metadata(&path)?.len();
-        if file_len == 0 {
-            let _ = std::fs::remove_file(&path);
-            continue;
-        }
+        if file_len == 0 { let _ = std::fs::remove_file(&path); continue; }
         let mut bytes = Vec::<u8>::new();
         std::fs::File::open(&path)
             .with_context(|| format!("open {}", path.display()))?
             .read_to_end(&mut bytes)?;
         let bucket_classes = materialize_field_partitioned_bucket(
-            b,
-            config.bucket_bits,
-            bytes,
-            &qid_lookup,
-            &mut writer,
-            &mut qids,
-            &mut written,
+            b, config.bucket_bits, bytes, &qid_lookup, &mut writer, &mut qids, &mut written,
         )?;
         global_classes += bucket_classes;
         if (b + 1) % 64 == 0 || b + 1 == bucket_count {
             eprintln!(
                 "  fieldreduce-preq bucket {}/{} classes={} written_so_far={} elapsed={:.1}s",
-                b + 1,
-                bucket_count,
-                bucket_classes,
-                written,
-                start.elapsed().as_secs_f64()
+                b + 1, bucket_count, bucket_classes, written, start.elapsed().as_secs_f64()
             );
         }
         let _ = std::fs::remove_file(&path);
@@ -1794,14 +1514,8 @@ pub fn external_step_q_class_fieldreduce_preq(
     println!("q_external_class_fieldreduce_preq local_chain_masked={local_chain_masked}");
     println!("q_external_class_fieldreduce_preq global_classes={global_classes}");
     println!("q_external_class_fieldreduce_preq output_states={finished}");
-    println!(
-        "q_external_class_fieldreduce_preq removed_dupes={}",
-        raw.saturating_sub(finished)
-    );
-    eprintln!(
-        "q external class fieldreduce-preq step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_class_fieldreduce_preq removed_dupes={}", raw.saturating_sub(finished));
+    eprintln!("q external class fieldreduce-preq step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
 
@@ -1827,32 +1541,32 @@ fn qlive_compute_child_touch(
     input: &FieldChainLayer,
     qgraph: &QRevClassGraph,
     bi: usize,
+    qids: &mut Vec<u32>,
+    read_buf: &mut Vec<u8>,
 ) -> QLiveChildTouch {
     let meta = &input.metas[bi];
     let child_field = meta.field_id;
-    let qids = input.read_block_chains(bi);
+    input.read_block_chains_into_with_buf(bi, qids, read_buf);
+    let parents_by_piece: [&[FieldId]; crate::piece::PIECE_COUNT] =
+        std::array::from_fn(|placed| rgraph.edges(child_field, placed as u8));
     let mut piece_active = [false; crate::piece::PIECE_COUNT];
 
-    for qid in qids {
+    for &qid in qids.iter() {
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
-            if piece_active[placed as usize] {
-                continue;
-            }
-            if !rgraph.edges(child_field, placed).is_empty()
+            if piece_active[placed as usize] { continue; }
+            if !parents_by_piece[placed as usize].is_empty()
                 && !qgraph.records_for(qid, placed).is_empty()
             {
                 piece_active[placed as usize] = true;
             }
         }
-        if piece_active.iter().all(|&x| x) {
-            break;
-        }
+        if piece_active.iter().all(|&x| x) { break; }
     }
 
     let mut parents = Vec::<FieldId>::new();
     for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
         if piece_active[placed as usize] {
-            parents.extend_from_slice(rgraph.edges(child_field, placed));
+            parents.extend_from_slice(parents_by_piece[placed as usize]);
         }
     }
     parents.sort_unstable();
@@ -1861,21 +1575,11 @@ fn qlive_compute_child_touch(
     let (min_parent, max_parent, median_parent) = if parents.is_empty() {
         (FieldId::MAX, FieldId::MAX, FieldId::MAX)
     } else {
-        (
-            parents[0],
-            *parents.last().unwrap(),
-            parents[parents.len() / 2],
-        )
+        (parents[0], *parents.last().unwrap(), parents[parents.len() / 2])
     };
 
-    QLiveChildTouch {
-        block_idx: bi,
-        child_field,
-        parents,
-        min_parent,
-        max_parent,
-        median_parent,
-    }
+    qlive_release_oversized_child_buffers(qids, read_buf);
+    QLiveChildTouch { block_idx: bi, child_field, parents, min_parent, max_parent, median_parent }
 }
 
 fn qlive_build_child_order_and_counts(
@@ -1894,8 +1598,8 @@ fn qlive_build_child_order_and_counts(
     let done = AtomicUsize::new(0);
     let mut touches: Vec<QLiveChildTouch> = (0..input.metas.len())
         .into_par_iter()
-        .map(|bi| {
-            let t = qlive_compute_child_touch(rgraph, input, qgraph, bi);
+        .map_init(|| (Vec::new(), Vec::new()), |(qids, read_buf), bi| {
+            let t = qlive_compute_child_touch(rgraph, input, qgraph, bi, qids, read_buf);
             let d = done.fetch_add(1, Ordering::Relaxed) + 1;
             if d % 1024 == 0 || d == input.metas.len() {
                 eprintln!(
@@ -1923,20 +1627,8 @@ fn qlive_build_child_order_and_counts(
     // Keep parent fields with similar neighborhoods close together.  This is a
     // cheap interval-style ordering; the exact optimum is a graph layout problem.
     touches.sort_unstable_by(|a, b| {
-        (
-            a.median_parent,
-            a.min_parent,
-            a.max_parent,
-            std::cmp::Reverse(a.parents.len()),
-            a.child_field,
-        )
-            .cmp(&(
-                b.median_parent,
-                b.min_parent,
-                b.max_parent,
-                std::cmp::Reverse(b.parents.len()),
-                b.child_field,
-            ))
+        (a.median_parent, a.min_parent, a.max_parent, std::cmp::Reverse(a.parents.len()), a.child_field)
+            .cmp(&(b.median_parent, b.min_parent, b.max_parent, std::cmp::Reverse(b.parents.len()), b.child_field))
     });
 
     let active_parent_fields = remaining.iter().filter(|&&c| c != 0).count();
@@ -1961,23 +1653,14 @@ struct QLiveSpoolWriter {
 
 impl QLiveSpoolWriter {
     fn create(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
         let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-        Ok(Self {
-            file,
-            metas: Vec::new(),
-            total_qids: 0,
-            encode_buf: Vec::with_capacity(1 << 20),
-        })
+        Ok(Self { file, metas: Vec::new(), total_qids: 0, encode_buf: Vec::with_capacity(1 << 20) })
     }
 
     fn write_field(&mut self, field: FieldId, qids: &[u32]) -> Result<()> {
         use std::io::Write;
-        if qids.is_empty() {
-            return Ok(());
-        }
+        if qids.is_empty() { return Ok(()); }
         let offset = self.total_qids;
         let bytes_len = qids.len().saturating_mul(3);
         self.encode_buf.resize(bytes_len, 0);
@@ -2015,9 +1698,7 @@ fn qlive_finalize_field(
             let avail = m.trailing_zeros() as u8;
             m &= m - 1;
             let qid = qid_from_lookup(qid_lookup, bag_tail, avail);
-            if qid != QID_MISSING {
-                qids.push(qid);
-            }
+            if qid != QID_MISSING { qids.push(qid); }
         }
     }
     qids.sort_unstable();
@@ -2028,6 +1709,7 @@ fn qlive_finalize_field(
     Ok(n)
 }
 
+
 struct QLiveClassSpoolWriter {
     file: std::io::BufWriter<std::fs::File>,
     metas: Vec<(FieldId, u32, u64)>,
@@ -2036,22 +1718,14 @@ struct QLiveClassSpoolWriter {
 
 impl QLiveClassSpoolWriter {
     fn create(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
         let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-        Ok(Self {
-            file,
-            metas: Vec::new(),
-            total_records: 0,
-        })
+        Ok(Self { file, metas: Vec::new(), total_records: 0 })
     }
 
     fn write_field_classes(&mut self, field: FieldId, classes: &[(u32, u32)]) -> Result<u64> {
         use std::io::Write;
-        if classes.is_empty() {
-            return Ok(0);
-        }
+        if classes.is_empty() { return Ok(0); }
         let offset = self.total_records;
         for &(bag_tail, mask) in classes {
             self.file.write_all(&bag_tail.to_le_bytes())?;
@@ -2114,11 +1788,7 @@ fn qlive_materialize_class_spool(
     metas.sort_unstable_by_key(|&(field, _, _)| field);
     for w in metas.windows(2) {
         if w[0].0 >= w[1].0 {
-            bail!(
-                "live class spool has duplicate or unsorted field after sort: {} then {}",
-                w[0].0,
-                w[1].0
-            );
+            bail!("live class spool has duplicate or unsorted field after sort: {} then {}", w[0].0, w[1].0);
         }
     }
 
@@ -2144,9 +1814,7 @@ fn qlive_materialize_class_spool(
                 let avail = mask.trailing_zeros() as u8;
                 mask &= mask - 1;
                 let qid = qid_from_lookup(qid_lookup, bag_tail, avail);
-                if qid != QID_MISSING {
-                    qids.push(qid);
-                }
+                if qid != QID_MISSING { qids.push(qid); }
             }
         }
         qids.sort_unstable();
@@ -2218,6 +1886,7 @@ fn qlive_assemble_spool(
     }
     writer.finish()
 }
+
 
 // -----------------------------------------------------------------------------
 // PreQ frontier-direct path.
@@ -2297,9 +1966,7 @@ fn build_preq_direct_table(q_index: &QStateIndex) -> (Vec<u32>, Vec<PreqDirectEn
     let mut keys = Vec::<u32>::new();
 
     for (qid, &s) in q_index.states.iter().enumerate() {
-        let Some(k) = qstate_to_preq_key(s) else {
-            continue;
-        };
+        let Some(k) = qstate_to_preq_key(s) else { continue; };
         let id = if let Some(&id) = key_to_id.get(&k) {
             id
         } else {
@@ -2317,15 +1984,11 @@ fn build_preq_direct_table(q_index: &QStateIndex) -> (Vec<u32>, Vec<PreqDirectEn
         let tail4 = decode_tail4(tail4_enc);
         let (x, y) = crate::qstate::decode_avail_pair(avail);
         let choices = [(x, y), (y, x)]; // (remaining, old_q1)
-        let mut by_piece: [Vec<u32>; crate::piece::PIECE_COUNT] =
-            std::array::from_fn(|_| Vec::new());
+        let mut by_piece: [Vec<u32>; crate::piece::PIECE_COUNT] = std::array::from_fn(|_| Vec::new());
 
         for (choice_idx, &(remaining, old_q1)) in choices.iter().enumerate() {
-            if x == y && choice_idx == 1 {
-                break;
-            }
-            let old_tail5 =
-                crate::qstate::encode_tail5([old_q1, tail4[0], tail4[1], tail4[2], tail4[3]]);
+            if x == y && choice_idx == 1 { break; }
+            let old_tail5 = crate::qstate::encode_tail5([old_q1, tail4[0], tail4[1], tail4[2], tail4[3]]);
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let old = crate::qstate::QChainState {
                     avail: crate::qstate::encode_avail_pair(placed, remaining),
@@ -2344,11 +2007,7 @@ fn build_preq_direct_table(q_index: &QStateIndex) -> (Vec<u32>, Vec<PreqDirectEn
             v.dedup();
             total += v.len();
         }
-        entries.push(PreqDirectEntry {
-            key,
-            q7_by_piece: by_piece,
-            total_q7: total,
-        });
+        entries.push(PreqDirectEntry { key, q7_by_piece: by_piece, total_q7: total });
     }
 
     let mapped = qid_to_preq.iter().filter(|&&x| x != PREQ_MISSING).count();
@@ -2370,16 +2029,12 @@ enum QidFieldAcc {
 }
 
 impl QidFieldAcc {
-    fn new() -> Self {
-        Self::Vec(Vec::new())
-    }
+    fn new() -> Self { Self::Vec(Vec::new()) }
 
     fn estimated_bytes(&self) -> usize {
         match self {
             QidFieldAcc::Vec(v) => v.capacity().saturating_mul(std::mem::size_of::<u32>()),
-            QidFieldAcc::Bitset { bits } => {
-                bits.capacity().saturating_mul(std::mem::size_of::<u64>())
-            }
+            QidFieldAcc::Bitset { bits } => bits.capacity().saturating_mul(std::mem::size_of::<u64>()),
         }
     }
 
@@ -2406,9 +2061,7 @@ impl QidFieldAcc {
     }
 
     fn insert_all(&mut self, qids: &[u32], threshold: usize, bit_words: usize) {
-        if qids.is_empty() {
-            return;
-        }
+        if qids.is_empty() { return; }
         match self {
             QidFieldAcc::Vec(v) => {
                 v.extend_from_slice(qids);
@@ -2448,7 +2101,8 @@ impl QidFieldAcc {
                         out.push((wi * 64 + b) as u32);
                     }
                 }
-                // The word scan is already sorted and contains no duplicates.
+                out.sort_unstable();
+                // bitset scan is already sorted; keep no-op sort for safety if qid universe changes.
                 out.len() as u64
             }
         }
@@ -2465,9 +2119,7 @@ fn build_unique_preqs_for_block(
     let mut preqs = Vec::<u32>::with_capacity(qids.len());
     for qid in qids {
         let pid = qid_to_preq[qid as usize];
-        if pid != PREQ_MISSING {
-            preqs.push(pid);
-        }
+        if pid != PREQ_MISSING { preqs.push(pid); }
     }
     preqs.sort_unstable();
     preqs.dedup();
@@ -2489,16 +2141,12 @@ fn qpreq_compute_child_touch_from_preqs(
         let entry = &preq_entries[pid as usize];
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
             let p = placed as usize;
-            if piece_active[p] {
-                continue;
-            }
+            if piece_active[p] { continue; }
             if !entry.q7_by_piece[p].is_empty() && !rgraph.edges(child_field, placed).is_empty() {
                 piece_active[p] = true;
             }
         }
-        if piece_active.iter().all(|&x| x) {
-            break;
-        }
+        if piece_active.iter().all(|&x| x) { break; }
     }
 
     let mut parents = Vec::<FieldId>::new();
@@ -2513,21 +2161,10 @@ fn qpreq_compute_child_touch_from_preqs(
     let (min_parent, max_parent, median_parent) = if parents.is_empty() {
         (FieldId::MAX, FieldId::MAX, FieldId::MAX)
     } else {
-        (
-            parents[0],
-            *parents.last().unwrap(),
-            parents[parents.len() / 2],
-        )
+        (parents[0], *parents.last().unwrap(), parents[parents.len() / 2])
     };
 
-    QLiveChildTouch {
-        block_idx: bi,
-        child_field,
-        parents,
-        min_parent,
-        max_parent,
-        median_parent,
-    }
+    QLiveChildTouch { block_idx: bi, child_field, parents, min_parent, max_parent, median_parent }
 }
 
 fn qpreq_build_counts_and_child_order_inputs(
@@ -2579,26 +2216,12 @@ fn qpreq_build_counts_and_child_order_inputs(
     for t in &touches {
         touched_edges += t.parents.len() as u64;
         max_parents = max_parents.max(t.parents.len());
-        for &p in &t.parents {
-            remaining[p as usize] = remaining[p as usize].saturating_add(1);
-        }
+        for &p in &t.parents { remaining[p as usize] = remaining[p as usize].saturating_add(1); }
     }
 
     touches.sort_unstable_by(|a, b| {
-        (
-            a.median_parent,
-            a.min_parent,
-            a.max_parent,
-            std::cmp::Reverse(a.parents.len()),
-            a.child_field,
-        )
-            .cmp(&(
-                b.median_parent,
-                b.min_parent,
-                b.max_parent,
-                std::cmp::Reverse(b.parents.len()),
-                b.child_field,
-            ))
+        (a.median_parent, a.min_parent, a.max_parent, std::cmp::Reverse(a.parents.len()), a.child_field)
+            .cmp(&(b.median_parent, b.min_parent, b.max_parent, std::cmp::Reverse(b.parents.len()), b.child_field))
     });
 
     eprintln!(
@@ -2611,13 +2234,7 @@ fn qpreq_build_counts_and_child_order_inputs(
         preq_states as f64 / input.total_states.max(1) as f64,
         start.elapsed().as_secs_f64()
     );
-    Ok((
-        touches,
-        remaining,
-        preq_counts,
-        input.total_states,
-        preq_states,
-    ))
+    Ok((touches, remaining, preq_counts, input.total_states, preq_states))
 }
 
 fn qpreq_parent_weight(preq_counts: &[u32], touches: &[QLiveChildTouch]) -> Vec<u64> {
@@ -2666,48 +2283,22 @@ fn qpreq_build_frontier_order(
                       touches: &[QLiveChildTouch],
                       parent_weight: &[u64]| {
         if !processed[ci] {
-            heap.push(qlive_frontier_order_key(
-                &touches[ci],
-                remaining,
-                open,
-                parent_weight,
-                ci,
-            ));
+            heap.push(qlive_frontier_order_key(&touches[ci], remaining, open, parent_weight, ci));
         }
     };
 
     while order.len() < by_child.len() {
         if heap.is_empty() {
-            while seed_pos < summary_order.len() && processed[summary_order[seed_pos]] {
-                seed_pos += 1;
-            }
+            while seed_pos < summary_order.len() && processed[summary_order[seed_pos]] { seed_pos += 1; }
             if seed_pos < summary_order.len() {
-                push_child(
-                    summary_order[seed_pos],
-                    &mut heap,
-                    &processed,
-                    &remaining,
-                    &open,
-                    &by_child,
-                    &parent_weight,
-                );
+                push_child(summary_order[seed_pos], &mut heap, &processed, &remaining, &open, &by_child, &parent_weight);
                 seed_pos += 1;
             }
         }
         let ci = loop {
-            let Some(item) = heap.pop() else {
-                break None;
-            };
-            if processed[item.child] {
-                continue;
-            }
-            let fresh = qlive_frontier_order_key(
-                &by_child[item.child],
-                &remaining,
-                &open,
-                &parent_weight,
-                item.child,
-            );
+            let Some(item) = heap.pop() else { break None; };
+            if processed[item.child] { continue; }
+            let fresh = qlive_frontier_order_key(&by_child[item.child], &remaining, &open, &parent_weight, item.child);
             if fresh != item {
                 stale_pops += 1;
                 heap.push(fresh);
@@ -2715,9 +2306,7 @@ fn qpreq_build_frontier_order(
             }
             break Some(item.child);
         };
-        let Some(ci) = ci else {
-            continue;
-        };
+        let Some(ci) = ci else { continue; };
 
         processed[ci] = true;
         order.push(ci);
@@ -2729,38 +2318,16 @@ fn qpreq_build_frontier_order(
                 active_fields += 1;
                 active_weight += parent_weight[pi].max(1) as u128;
                 if let Some(kids) = children_of_parent.get(&p) {
-                    for &k in kids {
-                        push_child(
-                            k,
-                            &mut heap,
-                            &processed,
-                            &remaining,
-                            &open,
-                            &by_child,
-                            &parent_weight,
-                        );
-                    }
+                    for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
                 }
             }
         }
         for &p in &t.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if let Some(kids) = children_of_parent.get(&p) {
-                for &k in kids {
-                    push_child(
-                        k,
-                        &mut heap,
-                        &processed,
-                        &remaining,
-                        &open,
-                        &by_child,
-                        &parent_weight,
-                    );
-                }
+                for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
             }
             if remaining[pi] == 0 {
                 if open[pi] != 0 {
@@ -2795,9 +2362,7 @@ fn qpreq_build_frontier_order(
         start.elapsed().as_secs_f64()
     );
     let mut ordered = Vec::<QLiveChildTouch>::with_capacity(by_child.len());
-    for ci in order {
-        ordered.push(by_child[ci].clone());
-    }
+    for ci in order { ordered.push(by_child[ci].clone()); }
     ordered
 }
 
@@ -2807,6 +2372,7 @@ struct QPreqDirectStats {
     raw_q7_candidates: u64,
     acc_inserts: u64,
 }
+
 
 #[derive(Debug, Clone, Copy)]
 struct QPreqSpillRun {
@@ -2827,9 +2393,7 @@ struct QPreqAccSpillWriter {
 
 impl QPreqAccSpillWriter {
     fn create(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
         let file = std::io::BufWriter::new(std::fs::File::create(path)?);
         Ok(Self {
             path: path.to_path_buf(),
@@ -2846,9 +2410,7 @@ impl QPreqAccSpillWriter {
     fn spill_acc(&mut self, field: FieldId, acc: QidFieldAcc) -> Result<u64> {
         use std::io::Write;
         let qids = acc.finalized_vec();
-        if qids.is_empty() {
-            return Ok(0);
-        }
+        if qids.is_empty() { return Ok(0); }
         let offset = self.total_qids;
         let bytes_len = qids.len().saturating_mul(3);
         self.encode_buf.resize(bytes_len, 0);
@@ -2861,10 +2423,7 @@ impl QPreqAccSpillWriter {
         self.file.write_all(&self.encode_buf)?;
         self.encode_buf.clear();
         let count = qids.len() as u32;
-        self.runs.entry(field).or_default().push(QPreqSpillRun {
-            offset_qids: offset,
-            count,
-        });
+        self.runs.entry(field).or_default().push(QPreqSpillRun { offset_qids: offset, count });
         self.total_qids += count as u64;
         self.spill_events += 1;
         self.spill_runs += 1;
@@ -2887,9 +2446,7 @@ fn qpreq_spill_largest_until(
     low_water_bytes: usize,
     protected: &[FieldId],
 ) -> Result<u64> {
-    if *total_hot_bytes <= hot_cap_bytes {
-        return Ok(0);
-    }
+    if *total_hot_bytes <= hot_cap_bytes { return Ok(0); }
 
     // Previous implementation selected one victim by scanning all hot accs,
     // then repeated that scan until low-water.  On layer6 this produced
@@ -2899,13 +2456,9 @@ fn qpreq_spill_largest_until(
     let protected_set: std::collections::HashSet<FieldId> = protected.iter().copied().collect();
     let mut victims = Vec::<(usize, FieldId)>::with_capacity(accs.len().min(1_000_000));
     for (&field, acc) in accs.iter() {
-        if protected_set.contains(&field) {
-            continue;
-        }
+        if protected_set.contains(&field) { continue; }
         let b = acc.estimated_bytes();
-        if b != 0 {
-            victims.push((b, field));
-        }
+        if b != 0 { victims.push((b, field)); }
     }
     victims.sort_unstable_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
 
@@ -2914,12 +2467,8 @@ fn qpreq_spill_largest_until(
     let spilled_qids_before = spill.spilled_qids;
     let sweep_start = Instant::now();
     for (bytes, field) in victims {
-        if *total_hot_bytes <= low_water_bytes {
-            break;
-        }
-        let Some(acc) = accs.remove(&field) else {
-            continue;
-        };
+        if *total_hot_bytes <= low_water_bytes { break; }
+        let Some(acc) = accs.remove(&field) else { continue; };
         *total_hot_bytes = total_hot_bytes.saturating_sub(bytes);
         spilled_bytes = spilled_bytes.saturating_add(bytes);
         spill.spill_acc(field, acc)?;
@@ -2948,19 +2497,11 @@ fn qpreq_finalize_field_with_spills(
     spool: &mut QLiveSpoolWriter,
 ) -> Result<u64> {
     let runs = spill.runs.remove(&field).unwrap_or_default();
-    if !runs.is_empty() {
-        spill.flush()?;
-    }
-    let spill_file = if runs.is_empty() {
-        None
-    } else {
-        Some(std::fs::File::open(&spill.path)?)
-    };
+    if !runs.is_empty() { spill.flush()?; }
+    let spill_file = if runs.is_empty() { None } else { Some(std::fs::File::open(&spill.path)?) };
     qids_tmp.clear();
     qpreq_materialize_close_parts(acc, &runs, spill_file.as_ref(), qids_tmp, read_buf)?;
-    if qids_tmp.is_empty() {
-        return Ok(0);
-    }
+    if qids_tmp.is_empty() { return Ok(0); }
     let n = qids_tmp.len() as u64;
     spool.write_field(field, qids_tmp)?;
     qids_tmp.clear();
@@ -2979,11 +2520,7 @@ fn qpreq_read_exact_at(file: &std::fs::File, mut buf: &mut [u8], mut offset: u64
     while !buf.is_empty() {
         let n = file.read_at(buf, offset)?;
         if n == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "short read from qpreq spill file",
-            )
-            .into());
+            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "short read from qpreq spill file").into());
         }
         offset += n as u64;
         let (_, rest) = buf.split_at_mut(n);
@@ -3027,35 +2564,21 @@ fn qpreq_drain_close_jobs_parallel(
     spill: &mut QPreqAccSpillWriter,
     spool: &mut QLiveSpoolWriter,
 ) -> Result<u64> {
-    if pending.is_empty() {
-        return Ok(0);
-    }
+    if pending.is_empty() { return Ok(0); }
     let start = Instant::now();
     let jobs = std::mem::take(pending);
     let job_count = jobs.len();
     let run_count: usize = jobs.iter().map(|j| j.runs.len()).sum();
     let has_spills = run_count != 0;
-    if has_spills {
-        spill.flush()?;
-    }
-    let spill_file = if has_spills {
-        Some(std::sync::Arc::new(std::fs::File::open(&spill.path)?))
-    } else {
-        None
-    };
+    if has_spills { spill.flush()?; }
+    let spill_file = if has_spills { Some(std::sync::Arc::new(std::fs::File::open(&spill.path)?)) } else { None };
 
     let mut results: Vec<(FieldId, Vec<u32>)> = jobs
         .into_par_iter()
         .map(|job| -> Result<(FieldId, Vec<u32>)> {
             let mut qids = Vec::<u32>::new();
             let mut read_buf = Vec::<u8>::new();
-            qpreq_materialize_close_parts(
-                job.acc,
-                &job.runs,
-                spill_file.as_deref(),
-                &mut qids,
-                &mut read_buf,
-            )?;
+            qpreq_materialize_close_parts(job.acc, &job.runs, spill_file.as_deref(), &mut qids, &mut read_buf)?;
             Ok((job.field, qids))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -3063,9 +2586,7 @@ fn qpreq_drain_close_jobs_parallel(
     results.sort_unstable_by_key(|&(field, _)| field);
     let mut total = 0u64;
     for (field, qids) in results {
-        if qids.is_empty() {
-            continue;
-        }
+        if qids.is_empty() { continue; }
         total += qids.len() as u64;
         spool.write_field(field, &qids)?;
     }
@@ -3123,18 +2644,12 @@ pub fn external_step_q_preq_frontier_direct(
 
         for &pid in &preqs {
             let entry = &preq_entries[pid as usize];
-            if entry.total_q7 == 0 {
-                continue;
-            }
+            if entry.total_q7 == 0 { continue; }
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let q7s = &entry.q7_by_piece[placed as usize];
-                if q7s.is_empty() {
-                    continue;
-                }
+                if q7s.is_empty() { continue; }
                 let parents = rgraph.edges(child_field, placed);
-                if parents.is_empty() {
-                    continue;
-                }
+                if parents.is_empty() { continue; }
                 stats.raw_q7_candidates += q7s.len() as u64 * parents.len() as u64;
                 for &f7 in parents {
                     let acc = accs.entry(f7).or_insert_with(QidFieldAcc::new);
@@ -3146,9 +2661,7 @@ pub fn external_step_q_preq_frontier_direct(
 
         for &p in &touch.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if remaining[pi] == 0 {
                 if let Some(acc) = accs.remove(&p) {
@@ -3172,10 +2685,7 @@ pub fn external_step_q_preq_frontier_direct(
     }
 
     if !accs.is_empty() {
-        eprintln!(
-            "q preq frontier-direct warning: finalizing {} remaining accs at end",
-            accs.len()
-        );
+        eprintln!("q preq frontier-direct warning: finalizing {} remaining accs at end", accs.len());
         let rest = std::mem::take(&mut accs);
         for (field, acc) in rest {
             let n = acc.finalize_into(&mut qids_tmp);
@@ -3205,33 +2715,14 @@ pub fn external_step_q_preq_frontier_direct(
     let _ = std::fs::remove_file(&spool_path);
     println!("q_external_preq_frontier_direct original_states={original_states}");
     println!("q_external_preq_frontier_direct preq_states={preq_states}");
-    println!(
-        "q_external_preq_frontier_direct preq_ratio={:.6}",
-        preq_states as f64 / original_states.max(1) as f64
-    );
-    println!(
-        "q_external_preq_frontier_direct raw_q7_candidates={}",
-        stats.raw_q7_candidates
-    );
-    println!(
-        "q_external_preq_frontier_direct acc_inserts={}",
-        stats.acc_inserts
-    );
+    println!("q_external_preq_frontier_direct preq_ratio={:.6}", preq_states as f64 / original_states.max(1) as f64);
+    println!("q_external_preq_frontier_direct raw_q7_candidates={}", stats.raw_q7_candidates);
+    println!("q_external_preq_frontier_direct acc_inserts={}", stats.acc_inserts);
     println!("q_external_preq_frontier_direct finalized_fields={finalized_fields}");
     println!("q_external_preq_frontier_direct output_states={finished}");
-    println!(
-        "q_external_preq_frontier_direct removed_dupes={}",
-        stats.raw_q7_candidates.saturating_sub(finished)
-    );
-    println!(
-        "q_external_preq_frontier_direct output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external preq frontier-direct step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_preq_frontier_direct removed_dupes={}", stats.raw_q7_candidates.saturating_sub(finished));
+    println!("q_external_preq_frontier_direct output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external preq frontier-direct step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
 
@@ -3293,18 +2784,12 @@ pub fn external_step_q_preq_frontier_spill(
 
         for &pid in &preqs {
             let entry = &preq_entries[pid as usize];
-            if entry.total_q7 == 0 {
-                continue;
-            }
+            if entry.total_q7 == 0 { continue; }
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let q7s = &entry.q7_by_piece[placed as usize];
-                if q7s.is_empty() {
-                    continue;
-                }
+                if q7s.is_empty() { continue; }
                 let parents = rgraph.edges(child_field, placed);
-                if parents.is_empty() {
-                    continue;
-                }
+                if parents.is_empty() { continue; }
                 stats.raw_q7_candidates += q7s.len() as u64 * parents.len() as u64;
                 for &f7 in parents {
                     let acc = accs.entry(f7).or_insert_with(QidFieldAcc::new);
@@ -3323,9 +2808,7 @@ pub fn external_step_q_preq_frontier_spill(
 
         for &p in &touch.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if remaining[pi] == 0 {
                 let acc = accs.remove(&p);
@@ -3334,22 +2817,14 @@ pub fn external_step_q_preq_frontier_spill(
                 let runs = spill.runs.remove(&p).unwrap_or_default();
                 if acc.is_some() || !runs.is_empty() {
                     pending_close_hot_bytes = pending_close_hot_bytes.saturating_add(hot_bytes);
-                    pending_close.push(QPreqCloseJob {
-                        field: p,
-                        acc,
-                        runs,
-                        hot_bytes,
-                    });
+                    pending_close.push(QPreqCloseJob { field: p, acc, runs, hot_bytes });
                     finalized_fields += 1;
                 }
             }
         }
 
-        if pending_close.len() >= close_batch_fields
-            || pending_close_hot_bytes >= close_batch_hot_bytes
-        {
-            output_states +=
-                qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+        if pending_close.len() >= close_batch_fields || pending_close_hot_bytes >= close_batch_hot_bytes {
+            output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
             pending_close_hot_bytes = 0;
         }
 
@@ -3362,9 +2837,7 @@ pub fn external_step_q_preq_frontier_spill(
                 low_water_bytes,
                 &touch.parents,
             )?;
-            if n != 0 {
-                spill_sweeps += 1;
-            }
+            if n != 0 { spill_sweeps += 1; }
         }
 
         max_live_fields = max_live_fields.max(accs.len());
@@ -3383,43 +2856,27 @@ pub fn external_step_q_preq_frontier_spill(
     }
 
     if !pending_close.is_empty() {
-        output_states +=
-            qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+        output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
         pending_close_hot_bytes = 0;
     }
     if !accs.is_empty() || !spill.runs.is_empty() {
         eprintln!("q preq frontier-spill warning: finalizing remaining hot_accs={} spilled_fields={} at end", accs.len(), spill.runs.len());
-        let fields: Vec<FieldId> = accs
-            .keys()
-            .copied()
-            .chain(spill.runs.keys().copied())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
+        let fields: Vec<FieldId> = accs.keys().copied().chain(spill.runs.keys().copied()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         for field in fields {
             let acc = accs.remove(&field);
             let hot_bytes = acc.as_ref().map(|a| a.estimated_bytes()).unwrap_or(0);
             total_hot_bytes = total_hot_bytes.saturating_sub(hot_bytes);
             let runs = spill.runs.remove(&field).unwrap_or_default();
             pending_close_hot_bytes = pending_close_hot_bytes.saturating_add(hot_bytes);
-            pending_close.push(QPreqCloseJob {
-                field,
-                acc,
-                runs,
-                hot_bytes,
-            });
+            pending_close.push(QPreqCloseJob { field, acc, runs, hot_bytes });
             finalized_fields += 1;
-            if pending_close.len() >= close_batch_fields
-                || pending_close_hot_bytes >= close_batch_hot_bytes
-            {
-                output_states +=
-                    qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+            if pending_close.len() >= close_batch_fields || pending_close_hot_bytes >= close_batch_hot_bytes {
+                output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
                 pending_close_hot_bytes = 0;
             }
         }
         if !pending_close.is_empty() {
-            output_states +=
-                qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+            output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
         }
     }
     if let Some(field) = inject_full_q_field {
@@ -3474,54 +2931,23 @@ pub fn external_step_q_preq_frontier_spill(
     let _ = std::fs::remove_file(&spill_path);
     println!("q_external_preq_frontier_spill original_states={original_states}");
     println!("q_external_preq_frontier_spill preq_states={preq_states}");
-    println!(
-        "q_external_preq_frontier_spill preq_ratio={:.6}",
-        preq_states as f64 / original_states.max(1) as f64
-    );
-    println!(
-        "q_external_preq_frontier_spill raw_q7_candidates={}",
-        stats.raw_q7_candidates
-    );
-    println!(
-        "q_external_preq_frontier_spill acc_inserts={}",
-        stats.acc_inserts
-    );
+    println!("q_external_preq_frontier_spill preq_ratio={:.6}", preq_states as f64 / original_states.max(1) as f64);
+    println!("q_external_preq_frontier_spill raw_q7_candidates={}", stats.raw_q7_candidates);
+    println!("q_external_preq_frontier_spill acc_inserts={}", stats.acc_inserts);
     println!("q_external_preq_frontier_spill finalized_fields={finalized_fields}");
     println!("q_external_preq_frontier_spill output_states={finished}");
-    println!(
-        "q_external_preq_frontier_spill removed_dupes={}",
-        stats.raw_q7_candidates.saturating_sub(finished)
-    );
+    println!("q_external_preq_frontier_spill removed_dupes={}", stats.raw_q7_candidates.saturating_sub(finished));
     println!("q_external_preq_frontier_spill max_live_fields={max_live_fields}");
     println!("q_external_preq_frontier_spill max_hot_bytes={max_hot_bytes}");
-    println!(
-        "q_external_preq_frontier_spill spill_events={}",
-        spill.spill_events
-    );
-    println!(
-        "q_external_preq_frontier_spill spill_runs={}",
-        spill.spill_runs
-    );
-    println!(
-        "q_external_preq_frontier_spill spilled_qids={}",
-        spill.spilled_qids
-    );
+    println!("q_external_preq_frontier_spill spill_events={}", spill.spill_events);
+    println!("q_external_preq_frontier_spill spill_runs={}", spill.spill_runs);
+    println!("q_external_preq_frontier_spill spilled_qids={}", spill.spilled_qids);
     if let Some(field) = inject_full_q_field {
         println!("q_external_preq_frontier_spill injected_full_q_field={field}");
-        println!(
-            "q_external_preq_frontier_spill injected_full_q_states={}",
-            q_index.states.len()
-        );
+        println!("q_external_preq_frontier_spill injected_full_q_states={}", q_index.states.len());
     }
-    println!(
-        "q_external_preq_frontier_spill output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external preq frontier-spill step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_preq_frontier_spill output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external preq frontier-spill step elapsed={:.3}s", start.elapsed().as_secs_f64());
 
     Ok(finished)
 }
@@ -3589,9 +3015,7 @@ fn qpreq_splitmix64(mut x: u64) -> u64 {
 fn qpreq_target_buckets(parents: &[FieldId], bucket_size: u32) -> Vec<u32> {
     let bs = bucket_size.max(1);
     let mut b = Vec::<u32>::with_capacity(parents.len());
-    for &p in parents {
-        b.push(p / bs);
-    }
+    for &p in parents { b.push(p / bs); }
     b.sort_unstable();
     b.dedup();
     b
@@ -3607,9 +3031,7 @@ fn qpreq_minhash_buckets(buckets: &[u32]) -> [u64; 4] {
     let mut sig = [u64::MAX; 4];
     for &b in buckets {
         let x = b as u64;
-        for i in 0..4 {
-            sig[i] = sig[i].min(qpreq_splitmix64(x ^ seeds[i]));
-        }
+        for i in 0..4 { sig[i] = sig[i].min(qpreq_splitmix64(x ^ seeds[i])); }
     }
     sig
 }
@@ -3626,10 +3048,7 @@ fn qpreq_build_target_local_shards(
     let bucket_size = bucket_size.max(1);
     eprintln!(
         "q preq target-shard partition start children={} shards={} bucket_size={} refine_passes={}",
-        touches.len(),
-        num_shards,
-        bucket_size,
-        refine_passes
+        touches.len(), num_shards, bucket_size, refine_passes
     );
 
     let mut metas = Vec::<QPreqShardMeta>::with_capacity(touches.len());
@@ -3638,32 +3057,12 @@ fn qpreq_build_target_local_shards(
         let weight = preq.saturating_mul((t.parents.len() as u64).max(1)).max(1);
         let buckets = qpreq_target_buckets(&t.parents, bucket_size);
         let sig = qpreq_minhash_buckets(&buckets);
-        metas.push(QPreqShardMeta {
-            touch: t,
-            weight,
-            buckets,
-            shard: 0,
-            sig,
-        });
+        metas.push(QPreqShardMeta { touch: t, weight, buckets, shard: 0, sig });
     }
 
     metas.sort_unstable_by(|a, b| {
-        (
-            a.sig[0],
-            a.sig[1],
-            a.sig[2],
-            a.sig[3],
-            a.touch.median_parent,
-            a.touch.child_field,
-        )
-            .cmp(&(
-                b.sig[0],
-                b.sig[1],
-                b.sig[2],
-                b.sig[3],
-                b.touch.median_parent,
-                b.touch.child_field,
-            ))
+        (a.sig[0], a.sig[1], a.sig[2], a.sig[3], a.touch.median_parent, a.touch.child_field)
+            .cmp(&(b.sig[0], b.sig[1], b.sig[2], b.sig[3], b.touch.median_parent, b.touch.child_field))
     });
 
     let total_weight: u128 = metas.iter().map(|m| m.weight as u128).sum();
@@ -3681,28 +3080,19 @@ fn qpreq_build_target_local_shards(
     }
 
     let mut shard_weights = vec![0u128; num_shards];
-    let mut bucket_loads: Vec<HashMap<u32, u32>> =
-        (0..num_shards).map(|_| HashMap::new()).collect();
+    let mut bucket_loads: Vec<HashMap<u32, u32>> = (0..num_shards).map(|_| HashMap::new()).collect();
     for m in &metas {
         shard_weights[m.shard] += m.weight as u128;
-        for &b in &m.buckets {
-            *bucket_loads[m.shard].entry(b).or_insert(0) += 1;
-        }
+        for &b in &m.buckets { *bucket_loads[m.shard].entry(b).or_insert(0) += 1; }
     }
 
-    let eval_score = |m: &QPreqShardMeta,
-                      sidx: usize,
-                      shard_weights: &[u128],
-                      bucket_loads: &[HashMap<u32, u32>]|
-     -> i128 {
+    let eval_score = |m: &QPreqShardMeta, sidx: usize, shard_weights: &[u128], bucket_loads: &[HashMap<u32, u32>]| -> i128 {
         let mut overlap = 0i128;
         let mut new_buckets = 0i128;
         for &b in &m.buckets {
             let c = bucket_loads[sidx].get(&b).copied().unwrap_or(0) as i128;
             overlap += c;
-            if c == 0 {
-                new_buckets += 1;
-            }
+            if c == 0 { new_buckets += 1; }
         }
         let next_w = shard_weights[sidx].saturating_add(m.weight as u128);
         let overload = next_w.saturating_sub(soft_max_weight) as i128;
@@ -3721,19 +3111,12 @@ fn qpreq_build_target_local_shards(
             let mut best = cur;
             let mut best_score = eval_score(&metas[i], cur, &shard_weights, &bucket_loads);
             for sidx in 0..num_shards {
-                if sidx == cur {
-                    continue;
-                }
-                if shard_weights[sidx].saturating_add(w) > soft_max_weight
-                    && shard_weights[cur] <= target_weight
-                {
+                if sidx == cur { continue; }
+                if shard_weights[sidx].saturating_add(w) > soft_max_weight && shard_weights[cur] <= target_weight {
                     continue;
                 }
                 let sc = eval_score(&metas[i], sidx, &shard_weights, &bucket_loads);
-                if sc > best_score {
-                    best_score = sc;
-                    best = sidx;
-                }
+                if sc > best_score { best_score = sc; best = sidx; }
             }
             if best != cur {
                 shard_weights[cur] = shard_weights[cur].saturating_sub(w);
@@ -3741,9 +3124,7 @@ fn qpreq_build_target_local_shards(
                 for &b in &metas[i].buckets {
                     if let Some(x) = bucket_loads[cur].get_mut(&b) {
                         *x -= 1;
-                        if *x == 0 {
-                            bucket_loads[cur].remove(&b);
-                        }
+                        if *x == 0 { bucket_loads[cur].remove(&b); }
                     }
                     *bucket_loads[best].entry(b).or_insert(0) += 1;
                 }
@@ -3753,38 +3134,25 @@ fn qpreq_build_target_local_shards(
         }
         eprintln!(
             "  q preq target-shard refine pass={}/{} moved={} elapsed={:.1}s",
-            pass + 1,
-            refine_passes,
-            moved,
-            start.elapsed().as_secs_f64()
+            pass + 1, refine_passes, moved, start.elapsed().as_secs_f64()
         );
-        if moved == 0 {
-            break;
-        }
+        if moved == 0 { break; }
     }
 
     let mut fanin = HashMap::<u32, u32>::new();
     for sidx in 0..num_shards {
-        for &b in bucket_loads[sidx].keys() {
-            *fanin.entry(b).or_insert(0) += 1;
-        }
+        for &b in bucket_loads[sidx].keys() { *fanin.entry(b).or_insert(0) += 1; }
     }
     let mut fanin_vals: Vec<u32> = fanin.values().copied().collect();
     fanin_vals.sort_unstable();
     let q = |v: &[u32], p: f64| -> u32 {
-        if v.is_empty() {
-            return 0;
-        }
+        if v.is_empty() { return 0; }
         v[((v.len() - 1) as f64 * p).round() as usize]
     };
     let mut shard_child_counts = vec![0usize; num_shards];
     let mut shard_bucket_counts = vec![0usize; num_shards];
-    for sidx in 0..num_shards {
-        shard_bucket_counts[sidx] = bucket_loads[sidx].len();
-    }
-    for m in &metas {
-        shard_child_counts[m.shard] += 1;
-    }
+    for sidx in 0..num_shards { shard_bucket_counts[sidx] = bucket_loads[sidx].len(); }
+    for m in &metas { shard_child_counts[m.shard] += 1; }
     let min_w = shard_weights.iter().min().copied().unwrap_or(0);
     let max_w = shard_weights.iter().max().copied().unwrap_or(0);
     eprintln!(
@@ -3802,34 +3170,16 @@ fn qpreq_build_target_local_shards(
     }
 
     let mut shards: Vec<Vec<QLiveChildTouch>> = (0..num_shards).map(|_| Vec::new()).collect();
-    for m in metas {
-        shards[m.shard].push(m.touch);
-    }
+    for m in metas { shards[m.shard].push(m.touch); }
     for (sidx, shard) in shards.iter_mut().enumerate() {
         // Shard-local ordering: use parent interval locality, then heavier parent-degree.
         // The target-local partition already did most of the work; this keeps close
         // lifetime sane without allocating NUM_FIELDS-sized greedy state per shard.
         shard.sort_unstable_by(|a, b| {
-            (
-                a.median_parent,
-                a.min_parent,
-                a.max_parent,
-                std::cmp::Reverse(a.parents.len()),
-                a.child_field,
-            )
-                .cmp(&(
-                    b.median_parent,
-                    b.min_parent,
-                    b.max_parent,
-                    std::cmp::Reverse(b.parents.len()),
-                    b.child_field,
-                ))
+            (a.median_parent, a.min_parent, a.max_parent, std::cmp::Reverse(a.parents.len()), a.child_field)
+                .cmp(&(b.median_parent, b.min_parent, b.max_parent, std::cmp::Reverse(b.parents.len()), b.child_field))
         });
-        eprintln!(
-            "  q preq target-shard local-order shard={} children={}",
-            sidx,
-            shard.len()
-        );
+        eprintln!("  q preq target-shard local-order shard={} children={}", sidx, shard.len());
     }
     shards
 }
@@ -3859,9 +3209,7 @@ fn qpreq_run_one_target_shard(
 
     let mut remaining = HashMap::<FieldId, u32>::with_capacity(touches.len().saturating_mul(8));
     for t in &touches {
-        for &p in &t.parents {
-            *remaining.entry(p).or_insert(0) += 1;
-        }
+        for &p in &t.parents { *remaining.entry(p).or_insert(0) += 1; }
     }
 
     let shard_hot_cap = hot_cap_bytes.max(256usize << 20);
@@ -3887,18 +3235,12 @@ fn qpreq_run_one_target_shard(
 
         for &pid in &preqs {
             let entry = &preq_entries[pid as usize];
-            if entry.total_q7 == 0 {
-                continue;
-            }
+            if entry.total_q7 == 0 { continue; }
             for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
                 let q7s = &entry.q7_by_piece[placed as usize];
-                if q7s.is_empty() {
-                    continue;
-                }
+                if q7s.is_empty() { continue; }
                 let parents = rgraph.edges(child_field, placed);
-                if parents.is_empty() {
-                    continue;
-                }
+                if parents.is_empty() { continue; }
                 stats.raw_q7_candidates += q7s.len() as u64 * parents.len() as u64;
                 for &f7 in parents {
                     // This child belongs to this shard, so every contribution it creates
@@ -3907,23 +3249,16 @@ fn qpreq_run_one_target_shard(
                     let before = acc.estimated_bytes();
                     acc.insert_all(q7s, vec_to_bitset_threshold, bit_words);
                     let after = acc.estimated_bytes();
-                    if after >= before {
-                        total_hot_bytes = total_hot_bytes.saturating_add(after - before);
-                    } else {
-                        total_hot_bytes = total_hot_bytes.saturating_sub(before - after);
-                    }
+                    if after >= before { total_hot_bytes = total_hot_bytes.saturating_add(after - before); }
+                    else { total_hot_bytes = total_hot_bytes.saturating_sub(before - after); }
                     stats.acc_inserts += q7s.len() as u64;
                 }
             }
         }
 
         for &p in &touch.parents {
-            let Some(r) = remaining.get_mut(&p) else {
-                continue;
-            };
-            if *r == 0 {
-                continue;
-            }
+            let Some(r) = remaining.get_mut(&p) else { continue; };
+            if *r == 0 { continue; }
             *r -= 1;
             if *r == 0 {
                 let acc = accs.remove(&p);
@@ -3932,22 +3267,14 @@ fn qpreq_run_one_target_shard(
                 let runs = spill.runs.remove(&p).unwrap_or_default();
                 if acc.is_some() || !runs.is_empty() {
                     pending_close_hot_bytes = pending_close_hot_bytes.saturating_add(hot_bytes);
-                    pending_close.push(QPreqCloseJob {
-                        field: p,
-                        acc,
-                        runs,
-                        hot_bytes,
-                    });
+                    pending_close.push(QPreqCloseJob { field: p, acc, runs, hot_bytes });
                     stats.finalized_fields += 1;
                 }
             }
         }
 
-        if pending_close.len() >= close_batch_fields
-            || pending_close_hot_bytes >= close_batch_hot_bytes
-        {
-            stats.output_states +=
-                qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+        if pending_close.len() >= close_batch_fields || pending_close_hot_bytes >= close_batch_hot_bytes {
+            stats.output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
             pending_close_hot_bytes = 0;
         }
 
@@ -3960,9 +3287,7 @@ fn qpreq_run_one_target_shard(
                 low_water_bytes,
                 &touch.parents,
             )?;
-            if n != 0 {
-                stats.spill_sweeps += 1;
-            }
+            if n != 0 { stats.spill_sweeps += 1; }
         }
 
         stats.max_live_fields = stats.max_live_fields.max(accs.len());
@@ -3981,48 +3306,30 @@ fn qpreq_run_one_target_shard(
     }
 
     if !pending_close.is_empty() {
-        stats.output_states +=
-            qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+        stats.output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
         pending_close_hot_bytes = 0;
     }
     if !accs.is_empty() || !spill.runs.is_empty() {
         eprintln!(
             "q preq target-shard shard={} finalizing remaining hot_accs={} spilled_fields={}",
-            shard_id,
-            accs.len(),
-            spill.runs.len()
+            shard_id, accs.len(), spill.runs.len()
         );
-        let fields: Vec<FieldId> = accs
-            .keys()
-            .copied()
-            .chain(spill.runs.keys().copied())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
+        let fields: Vec<FieldId> = accs.keys().copied().chain(spill.runs.keys().copied()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         for field in fields {
             let acc = accs.remove(&field);
             let hot_bytes = acc.as_ref().map(|a| a.estimated_bytes()).unwrap_or(0);
             total_hot_bytes = total_hot_bytes.saturating_sub(hot_bytes);
             let runs = spill.runs.remove(&field).unwrap_or_default();
             pending_close_hot_bytes = pending_close_hot_bytes.saturating_add(hot_bytes);
-            pending_close.push(QPreqCloseJob {
-                field,
-                acc,
-                runs,
-                hot_bytes,
-            });
+            pending_close.push(QPreqCloseJob { field, acc, runs, hot_bytes });
             stats.finalized_fields += 1;
-            if pending_close.len() >= close_batch_fields
-                || pending_close_hot_bytes >= close_batch_hot_bytes
-            {
-                stats.output_states +=
-                    qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+            if pending_close.len() >= close_batch_fields || pending_close_hot_bytes >= close_batch_hot_bytes {
+                stats.output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
                 pending_close_hot_bytes = 0;
             }
         }
         if !pending_close.is_empty() {
-            stats.output_states +=
-                qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
+            stats.output_states += qpreq_drain_close_jobs_parallel(&mut pending_close, &mut spill, &mut spool)?;
         }
     }
 
@@ -4040,12 +3347,7 @@ fn qpreq_run_one_target_shard(
         stats.acc_inserts, stats.max_live_fields, stats.max_hot_bytes, stats.spill_sweeps,
         stats.spill_runs, stats.spilled_qids, start.elapsed().as_secs_f64()
     );
-    Ok(QPreqShardResult {
-        shard: shard_id,
-        spool_path,
-        metas,
-        stats,
-    })
+    Ok(QPreqShardResult { shard: shard_id, spool_path, metas, stats })
 }
 
 #[derive(Debug, Clone)]
@@ -4083,13 +3385,9 @@ fn qpreq_write_final_index(
 ) -> Result<()> {
     use anyhow::Context;
     use std::io::{BufWriter, Write};
-    if let Some(parent) = index_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut w = BufWriter::new(
-        std::fs::File::create(index_path)
-            .with_context(|| format!("failed to create {}", index_path.display()))?,
-    );
+    if let Some(parent) = index_path.parent() { std::fs::create_dir_all(parent)?; }
+    let mut w = BufWriter::new(std::fs::File::create(index_path)
+        .with_context(|| format!("failed to create {}", index_path.display()))?);
     w.write_all(b"FCHNIDX1")?;
     w.write_all(&1u32.to_le_bytes())?;
     w.write_all(&(metas.len() as u32).to_le_bytes())?;
@@ -4103,21 +3401,18 @@ fn qpreq_write_final_index(
     Ok(())
 }
 
-fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Path) -> Result<u64> {
+fn qpreq_assemble_multi_spools(
+    results: &[QPreqShardResult],
+    output_prefix: &Path,
+) -> Result<u64> {
     use anyhow::Context;
     use std::io::{BufReader, BufWriter, Write};
     let start = Instant::now();
-    let spool_paths: Vec<std::path::PathBuf> =
-        results.iter().map(|r| r.spool_path.clone()).collect();
+    let spool_paths: Vec<std::path::PathBuf> = results.iter().map(|r| r.spool_path.clone()).collect();
     let mut entries = Vec::<QPreqMultiSpoolMeta>::new();
     for (file_idx, r) in results.iter().enumerate() {
         for &(field, count, offset) in &r.metas {
-            entries.push(QPreqMultiSpoolMeta {
-                file_idx,
-                field,
-                count,
-                offset,
-            });
+            entries.push(QPreqMultiSpoolMeta { file_idx, field, count, offset });
         }
     }
     entries.sort_unstable_by_key(|m| (m.field, m.file_idx, m.offset));
@@ -4132,12 +3427,7 @@ fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Pat
             input_count += entries[gi].count as u64;
             gi += 1;
         }
-        groups.push(QPreqMergeGroup {
-            field,
-            start: start_i,
-            end: gi,
-            input_count,
-        });
+        groups.push(QPreqMergeGroup { field, start: start_i, end: gi, input_count });
     }
 
     let total_input_count: u64 = groups.iter().map(|g| g.input_count).sum();
@@ -4148,16 +3438,11 @@ fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Pat
     while cs < groups.len() {
         let mut ce = cs;
         let mut acc = 0u64;
-        while ce < groups.len()
-            && (acc < target_per_worker || ce == cs)
-            && chunks.len() + 1 < merge_workers
-        {
+        while ce < groups.len() && (acc < target_per_worker || ce == cs) && chunks.len() + 1 < merge_workers {
             acc += groups[ce].input_count;
             ce += 1;
         }
-        if chunks.len() + 1 == merge_workers {
-            ce = groups.len();
-        }
+        if chunks.len() + 1 == merge_workers { ce = groups.len(); }
         chunks.push((cs, ce));
         cs = ce;
     }
@@ -4172,10 +3457,7 @@ fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Pat
         .unwrap_or_else(|| Path::new("."))
         .join(format!(
             ".{}.merge_chunks",
-            output_prefix
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("qpreq_target_shard")
+            output_prefix.file_name().and_then(|s| s.to_str()).unwrap_or("qpreq_target_shard")
         ));
     let _ = std::fs::remove_dir_all(&merge_dir);
     std::fs::create_dir_all(&merge_dir)?;
@@ -4250,22 +3532,15 @@ fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Pat
         .collect();
 
     let mut chunk_results = Vec::<QPreqMergeChunkResult>::with_capacity(chunk_results_vec.len());
-    for r in chunk_results_vec {
-        chunk_results.push(r?);
-    }
+    for r in chunk_results_vec { chunk_results.push(r?); }
     chunk_results.sort_unstable_by_key(|r| r.chunk);
 
     let chains_path = output_prefix.with_extension("chains.u24.bin");
     let index_path = output_prefix.with_extension("field_index.bin");
-    if let Some(parent) = chains_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut chains_out = BufWriter::new(
-        std::fs::File::create(&chains_path)
-            .with_context(|| format!("failed to create {}", chains_path.display()))?,
-    );
-    let mut final_metas =
-        Vec::<crate::layer_store::FieldChainBlockMeta>::with_capacity(groups.len());
+    if let Some(parent) = chains_path.parent() { std::fs::create_dir_all(parent)?; }
+    let mut chains_out = BufWriter::new(std::fs::File::create(&chains_path)
+        .with_context(|| format!("failed to create {}", chains_path.display()))?);
+    let mut final_metas = Vec::<crate::layer_store::FieldChainBlockMeta>::with_capacity(groups.len());
     let mut global_offset = 0u64;
     let mut finished = 0u64;
     let mut merged_duplicate_fields = 0u64;
@@ -4289,21 +3564,15 @@ fn qpreq_assemble_multi_spools(results: &[QPreqShardResult], output_prefix: &Pat
         finished += cr.total_states;
         merged_duplicate_fields += cr.merged_duplicate_fields;
         max_fanin = max_fanin.max(cr.max_fanin);
-        for i in 0..fanin_hist.len() {
-            fanin_hist[i] += cr.fanin_hist[i];
-        }
+        for i in 0..fanin_hist.len() { fanin_hist[i] += cr.fanin_hist[i]; }
     }
     chains_out.flush()?;
     qpreq_write_final_index(&index_path, &final_metas, finished)?;
     eprintln!(
         "q preq target-shard final merge concatenate chunks={} output_states={} elapsed={:.3}s",
-        chunk_results.len(),
-        finished,
-        concat_start.elapsed().as_secs_f64()
+        chunk_results.len(), finished, concat_start.elapsed().as_secs_f64()
     );
-    for cr in &chunk_results {
-        let _ = std::fs::remove_file(&cr.chain_path);
-    }
+    for cr in &chunk_results { let _ = std::fs::remove_file(&cr.chain_path); }
     let _ = std::fs::remove_dir(&merge_dir);
 
     eprintln!(
@@ -4326,10 +3595,7 @@ pub fn external_step_q_preq_frontier_spill_target_shard(
     let start = Instant::now();
     let bit_words = (q_index.states.len() + 63) / 64;
     let num_shards = cfg.num_shards.max(1);
-    let per_shard_hot = cfg
-        .total_hot_cap_bytes
-        .saturating_div(num_shards)
-        .max(512usize << 20);
+    let per_shard_hot = cfg.total_hot_cap_bytes.saturating_div(num_shards).max(512usize << 20);
     eprintln!(
         "q preq target-shard step blocks={} input_states={} vec_to_bitset_threshold={} bitset_words={} total_hot_cap_bytes={} per_shard_hot_cap_bytes={} shards={} bucket_size={} refine_passes={} inject_full_q_field={:?} threads={}",
         input.metas.len(), input.total_states, cfg.vec_to_bitset_threshold, bit_words,
@@ -4367,9 +3633,7 @@ pub fn external_step_q_preq_frontier_spill_target_shard(
         })
         .collect();
     let mut results = Vec::<QPreqShardResult>::with_capacity(results_vec.len() + 1);
-    for r in results_vec {
-        results.push(r?);
-    }
+    for r in results_vec { results.push(r?); }
     results.sort_unstable_by_key(|r| r.shard);
 
     let mut partial_states_sum = 0u64;
@@ -4402,12 +3666,7 @@ pub fn external_step_q_preq_frontier_spill_target_shard(
             "q preq target-shard injected full-q terminal field={} qstates={} partial_states_sum={} elapsed={:.1}s",
             field, q_index.states.len(), partial_states_sum, start.elapsed().as_secs_f64()
         );
-        results.push(QPreqShardResult {
-            shard: usize::MAX,
-            spool_path: inject_path,
-            metas,
-            stats: QPreqShardStats::default(),
-        });
+        results.push(QPreqShardResult { shard: usize::MAX, spool_path: inject_path, metas, stats: QPreqShardStats::default() });
     }
 
     eprintln!(
@@ -4427,72 +3686,31 @@ pub fn external_step_q_preq_frontier_spill_target_shard(
     );
 
     let finished = qpreq_assemble_multi_spools(&results, output_prefix)?;
-    for r in &results {
-        let _ = std::fs::remove_file(&r.spool_path);
-    }
+    for r in &results { let _ = std::fs::remove_file(&r.spool_path); }
 
     println!("q_external_preq_frontier_spill_target_shard original_states={original_states}");
     println!("q_external_preq_frontier_spill_target_shard preq_states={preq_states}");
-    println!(
-        "q_external_preq_frontier_spill_target_shard preq_ratio={:.6}",
-        preq_states as f64 / original_states.max(1) as f64
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard raw_q7_candidates={}",
-        stats.raw_q7_candidates
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard acc_inserts={}",
-        stats.acc_inserts
-    );
+    println!("q_external_preq_frontier_spill_target_shard preq_ratio={:.6}", preq_states as f64 / original_states.max(1) as f64);
+    println!("q_external_preq_frontier_spill_target_shard raw_q7_candidates={}", stats.raw_q7_candidates);
+    println!("q_external_preq_frontier_spill_target_shard acc_inserts={}", stats.acc_inserts);
     println!("q_external_preq_frontier_spill_target_shard partial_states_sum={partial_states_sum}");
     println!("q_external_preq_frontier_spill_target_shard output_states={finished}");
-    println!(
-        "q_external_preq_frontier_spill_target_shard removed_dupes={}",
-        partial_states_sum.saturating_sub(finished)
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard max_shard_live_fields={}",
-        stats.max_live_fields
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard max_shard_hot_bytes={}",
-        stats.max_hot_bytes
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard spill_sweeps={}",
-        stats.spill_sweeps
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard spill_events={}",
-        stats.spill_events
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard spill_runs={}",
-        stats.spill_runs
-    );
-    println!(
-        "q_external_preq_frontier_spill_target_shard spilled_qids={}",
-        stats.spilled_qids
-    );
+    println!("q_external_preq_frontier_spill_target_shard removed_dupes={}", partial_states_sum.saturating_sub(finished));
+    println!("q_external_preq_frontier_spill_target_shard max_shard_live_fields={}", stats.max_live_fields);
+    println!("q_external_preq_frontier_spill_target_shard max_shard_hot_bytes={}", stats.max_hot_bytes);
+    println!("q_external_preq_frontier_spill_target_shard spill_sweeps={}", stats.spill_sweeps);
+    println!("q_external_preq_frontier_spill_target_shard spill_events={}", stats.spill_events);
+    println!("q_external_preq_frontier_spill_target_shard spill_runs={}", stats.spill_runs);
+    println!("q_external_preq_frontier_spill_target_shard spilled_qids={}", stats.spilled_qids);
     if let Some(field) = cfg.inject_full_q_field {
         println!("q_external_preq_frontier_spill_target_shard injected_full_q_field={field}");
-        println!(
-            "q_external_preq_frontier_spill_target_shard injected_full_q_states={}",
-            q_index.states.len()
-        );
+        println!("q_external_preq_frontier_spill_target_shard injected_full_q_states={}", q_index.states.len());
     }
-    println!(
-        "q_external_preq_frontier_spill_target_shard output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external preq frontier-spill-target-shard step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_preq_frontier_spill_target_shard output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external preq frontier-spill-target-shard step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QLiveGreedyHeapItem {
@@ -4502,31 +3720,25 @@ struct QLiveGreedyHeapItem {
 
 impl Ord for QLiveGreedyHeapItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.score
-            .cmp(&other.score)
-            .then_with(|| other.child.cmp(&self.child))
+        self.score.cmp(&other.score).then_with(|| other.child.cmp(&self.child))
     }
 }
 impl PartialOrd for QLiveGreedyHeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
-fn qlive_greedy_score(touch: &QLiveChildTouch, remaining: &[u32], open: &[u8]) -> i128 {
+fn qlive_greedy_score(
+    touch: &QLiveChildTouch,
+    remaining: &[u32],
+    open: &[u8],
+) -> i128 {
     let mut close = 0i128;
     let mut reuse = 0i128;
     let mut new_open = 0i128;
     for &p in &touch.parents {
         let pi = p as usize;
-        if remaining[pi] == 1 {
-            close += 1;
-        }
-        if open[pi] != 0 {
-            reuse += 1;
-        } else {
-            new_open += 1;
-        }
+        if remaining[pi] == 1 { close += 1; }
+        if open[pi] != 0 { reuse += 1; } else { new_open += 1; }
     }
     close * 1_000_000 + reuse * 1_000 - new_open
 }
@@ -4543,14 +3755,8 @@ fn qlive_weighted_greedy_score(
     for &p in &touch.parents {
         let pi = p as usize;
         let w = parent_weight[pi].max(1) as i128;
-        if remaining[pi] == 1 {
-            close += w;
-        }
-        if open[pi] != 0 {
-            reuse += w;
-        } else {
-            new_open += w;
-        }
+        if remaining[pi] == 1 { close += w; }
+        if open[pi] != 0 { reuse += w; } else { new_open += w; }
     }
     // Lexicographic-like weighted objective: close heavy open parents first,
     // then keep using already-open heavy parents, then avoid opening heavy parents.
@@ -4567,26 +3773,21 @@ pub fn qlive_greedy_order_stats(
 ) -> Result<()> {
     use std::collections::BinaryHeap;
     let start = Instant::now();
-    let (ordered_by_summary, remaining0) =
-        qlive_build_child_order_and_counts(rgraph, input, qgraph);
+    let (ordered_by_summary, remaining0) = qlive_build_child_order_and_counts(rgraph, input, qgraph);
     let mut by_child = ordered_by_summary.clone();
     by_child.sort_unstable_by_key(|t| t.block_idx);
 
     // Build parent -> source children adjacency.  Store it only for the active parent fields.
-    let mut children_of_parent: HashMap<FieldId, Vec<usize>> =
-        HashMap::with_capacity(remaining0.iter().filter(|&&c| c != 0).count());
+    let mut children_of_parent: HashMap<FieldId, Vec<usize>> = HashMap::with_capacity(
+        remaining0.iter().filter(|&&c| c != 0).count()
+    );
     for (ci, t) in by_child.iter().enumerate() {
         for &p in &t.parents {
             children_of_parent.entry(p).or_default().push(ci);
         }
     }
 
-    fn simulate_order(
-        name: &str,
-        order: &[usize],
-        touches: &[QLiveChildTouch],
-        remaining0: &[u32],
-    ) {
+    fn simulate_order(name: &str, order: &[usize], touches: &[QLiveChildTouch], remaining0: &[u32]) {
         let mut remaining = remaining0.to_vec();
         let mut open = vec![0u8; crate::graph::NUM_FIELDS];
         let mut active: u64 = 0;
@@ -4605,9 +3806,7 @@ pub fn qlive_greedy_order_stats(
             }
             for &p in &t.parents {
                 let pi = p as usize;
-                if remaining[pi] == 0 {
-                    continue;
-                }
+                if remaining[pi] == 0 { continue; }
                 remaining[pi] -= 1;
                 if remaining[pi] == 0 {
                     if open[pi] != 0 {
@@ -4677,43 +3876,25 @@ pub fn qlive_greedy_order_stats(
 
     while order.len() < by_child.len() {
         if heap.is_empty() {
-            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] {
-                seed_pos += 1;
-            }
+            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] { seed_pos += 1; }
             if seed_pos < seed_order.len() {
-                push_child(
-                    seed_order[seed_pos],
-                    &mut heap,
-                    &processed,
-                    &remaining,
-                    &open,
-                    &by_child,
-                );
+                push_child(seed_order[seed_pos], &mut heap, &processed, &remaining, &open, &by_child);
                 seed_pos += 1;
             }
         }
 
         let ci = loop {
-            let Some(item) = heap.pop() else {
-                break None;
-            };
-            if processed[item.child] {
-                continue;
-            }
+            let Some(item) = heap.pop() else { break None; };
+            if processed[item.child] { continue; }
             let s2 = qlive_greedy_score(&by_child[item.child], &remaining, &open);
             if s2 != item.score {
                 stale_pops += 1;
-                heap.push(QLiveGreedyHeapItem {
-                    score: s2,
-                    child: item.child,
-                });
+                heap.push(QLiveGreedyHeapItem { score: s2, child: item.child });
                 continue;
             }
             break Some(item.child);
         };
-        let Some(ci) = ci else {
-            continue;
-        };
+        let Some(ci) = ci else { continue; };
 
         processed[ci] = true;
         order.push(ci);
@@ -4725,22 +3906,16 @@ pub fn qlive_greedy_order_stats(
                 open[pi] = 1;
                 active += 1;
                 if let Some(kids) = children_of_parent.get(&p) {
-                    for &k in kids {
-                        push_child(k, &mut heap, &processed, &remaining, &open, &by_child);
-                    }
+                    for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child); }
                 }
             }
         }
         for &p in &t.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if let Some(kids) = children_of_parent.get(&p) {
-                for &k in kids {
-                    push_child(k, &mut heap, &processed, &remaining, &open, &by_child);
-                }
+                for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child); }
             }
             if remaining[pi] == 0 {
                 if open[pi] != 0 {
@@ -4818,16 +3993,13 @@ pub fn qlive_greedy_order_stats(
             }
             for &p in &t.parents {
                 let pi = p as usize;
-                if remaining[pi] == 0 {
-                    continue;
-                }
+                if remaining[pi] == 0 { continue; }
                 remaining[pi] -= 1;
                 if remaining[pi] == 0 {
                     if open[pi] != 0 {
                         open[pi] = 0;
                         active_fields -= 1;
-                        active_weight =
-                            active_weight.saturating_sub(parent_weight[pi].max(1) as u128);
+                        active_weight = active_weight.saturating_sub(parent_weight[pi].max(1) as u128);
                     }
                     finalized += 1;
                 }
@@ -4864,20 +4036,8 @@ pub fn qlive_greedy_order_stats(
         );
     }
 
-    simulate_order_weighted(
-        "summary-weight",
-        &summary_order,
-        &by_child,
-        &remaining0,
-        &parent_weight,
-    );
-    simulate_order_weighted(
-        "greedy-weight",
-        &order,
-        &by_child,
-        &remaining0,
-        &parent_weight,
-    );
+    simulate_order_weighted("summary-weight", &summary_order, &by_child, &remaining0, &parent_weight);
+    simulate_order_weighted("greedy-weight", &order, &by_child, &remaining0, &parent_weight);
 
     // Weighted frontier greedy.  Same frontier mechanism, but score uses the
     // parent_weight proxy instead of pure field counts.
@@ -4914,49 +4074,25 @@ pub fn qlive_greedy_order_stats(
 
     while order_w.len() < by_child.len() {
         if heap.is_empty() {
-            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] {
-                seed_pos += 1;
-            }
+            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] { seed_pos += 1; }
             if seed_pos < seed_order.len() {
-                push_child_w(
-                    seed_order[seed_pos],
-                    &mut heap,
-                    &processed,
-                    &remaining,
-                    &open,
-                    &by_child,
-                    &parent_weight,
-                );
+                push_child_w(seed_order[seed_pos], &mut heap, &processed, &remaining, &open, &by_child, &parent_weight);
                 seed_pos += 1;
             }
         }
 
         let ci = loop {
-            let Some(item) = heap.pop() else {
-                break None;
-            };
-            if processed[item.child] {
-                continue;
-            }
-            let s2 = qlive_weighted_greedy_score(
-                &by_child[item.child],
-                &remaining,
-                &open,
-                &parent_weight,
-            );
+            let Some(item) = heap.pop() else { break None; };
+            if processed[item.child] { continue; }
+            let s2 = qlive_weighted_greedy_score(&by_child[item.child], &remaining, &open, &parent_weight);
             if s2 != item.score {
                 stale_pops += 1;
-                heap.push(QLiveGreedyHeapItem {
-                    score: s2,
-                    child: item.child,
-                });
+                heap.push(QLiveGreedyHeapItem { score: s2, child: item.child });
                 continue;
             }
             break Some(item.child);
         };
-        let Some(ci) = ci else {
-            continue;
-        };
+        let Some(ci) = ci else { continue; };
 
         processed[ci] = true;
         order_w.push(ci);
@@ -4968,38 +4104,16 @@ pub fn qlive_greedy_order_stats(
                 active_fields += 1;
                 active_weight += parent_weight[pi].max(1) as u128;
                 if let Some(kids) = children_of_parent.get(&p) {
-                    for &k in kids {
-                        push_child_w(
-                            k,
-                            &mut heap,
-                            &processed,
-                            &remaining,
-                            &open,
-                            &by_child,
-                            &parent_weight,
-                        );
-                    }
+                    for &k in kids { push_child_w(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
                 }
             }
         }
         for &p in &t.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if let Some(kids) = children_of_parent.get(&p) {
-                for &k in kids {
-                    push_child_w(
-                        k,
-                        &mut heap,
-                        &processed,
-                        &remaining,
-                        &open,
-                        &by_child,
-                        &parent_weight,
-                    );
-                }
+                for &k in kids { push_child_w(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
             }
             if remaining[pi] == 0 {
                 if open[pi] != 0 {
@@ -5045,6 +4159,7 @@ pub fn qlive_greedy_order_stats(
         start.elapsed().as_secs_f64()
     );
 
+
     // Direct frontier-delta greedy.  This evaluates the objective described by
     // the user: after choosing child C, the live frontier changes by
     //     delta = newly_loaded_weight(C) - finished_weight(C).
@@ -5063,27 +4178,13 @@ pub fn qlive_greedy_order_stats(
     }
     impl Ord for QLiveFrontierHeapItem {
         fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-            (
-                self.neg_delta,
-                self.finish,
-                self.reuse,
-                self.neg_new_open,
-                self.neg_parent_count,
-            )
-                .cmp(&(
-                    other.neg_delta,
-                    other.finish,
-                    other.reuse,
-                    other.neg_new_open,
-                    other.neg_parent_count,
-                ))
+            (self.neg_delta, self.finish, self.reuse, self.neg_new_open, self.neg_parent_count)
+                .cmp(&(other.neg_delta, other.finish, other.reuse, other.neg_new_open, other.neg_parent_count))
                 .then_with(|| other.child.cmp(&self.child))
         }
     }
     impl PartialOrd for QLiveFrontierHeapItem {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            Some(self.cmp(other))
-        }
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
     }
 
     fn qlive_frontier_key(
@@ -5098,14 +4199,8 @@ pub fn qlive_greedy_order_stats(
         for &p in &touch.parents {
             let pi = p as usize;
             let w = parent_weight[pi].max(1) as i128;
-            if remaining[pi] == 1 {
-                finish += w;
-            }
-            if open[pi] != 0 {
-                reuse += w;
-            } else {
-                new_open += w;
-            }
+            if remaining[pi] == 1 { finish += w; }
+            if open[pi] != 0 { reuse += w; } else { new_open += w; }
         }
         let delta = new_open - finish;
         QLiveFrontierHeapItem {
@@ -5152,32 +4247,17 @@ pub fn qlive_greedy_order_stats(
 
     while order_f.len() < by_child.len() {
         if heap.is_empty() {
-            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] {
-                seed_pos += 1;
-            }
+            while seed_pos < seed_order.len() && processed[seed_order[seed_pos]] { seed_pos += 1; }
             if seed_pos < seed_order.len() {
-                push_child_f(
-                    seed_order[seed_pos],
-                    &mut heap,
-                    &processed,
-                    &remaining,
-                    &open,
-                    &by_child,
-                    &parent_weight,
-                );
+                push_child_f(seed_order[seed_pos], &mut heap, &processed, &remaining, &open, &by_child, &parent_weight);
                 seed_pos += 1;
             }
         }
 
         let ci = loop {
-            let Some(item) = heap.pop() else {
-                break None;
-            };
-            if processed[item.child] {
-                continue;
-            }
-            let mut fresh =
-                qlive_frontier_key(&by_child[item.child], &remaining, &open, &parent_weight);
+            let Some(item) = heap.pop() else { break None; };
+            if processed[item.child] { continue; }
+            let mut fresh = qlive_frontier_key(&by_child[item.child], &remaining, &open, &parent_weight);
             fresh.child = item.child;
             if fresh != item {
                 stale_pops += 1;
@@ -5186,9 +4266,7 @@ pub fn qlive_greedy_order_stats(
             }
             break Some(item.child);
         };
-        let Some(ci) = ci else {
-            continue;
-        };
+        let Some(ci) = ci else { continue; };
 
         processed[ci] = true;
         order_f.push(ci);
@@ -5200,38 +4278,16 @@ pub fn qlive_greedy_order_stats(
                 active_fields += 1;
                 active_weight += parent_weight[pi].max(1) as u128;
                 if let Some(kids) = children_of_parent.get(&p) {
-                    for &k in kids {
-                        push_child_f(
-                            k,
-                            &mut heap,
-                            &processed,
-                            &remaining,
-                            &open,
-                            &by_child,
-                            &parent_weight,
-                        );
-                    }
+                    for &k in kids { push_child_f(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
                 }
             }
         }
         for &p in &t.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if let Some(kids) = children_of_parent.get(&p) {
-                for &k in kids {
-                    push_child_f(
-                        k,
-                        &mut heap,
-                        &processed,
-                        &remaining,
-                        &open,
-                        &by_child,
-                        &parent_weight,
-                    );
-                }
+                for &k in kids { push_child_f(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
             }
             if remaining[pi] == 0 {
                 if open[pi] != 0 {
@@ -5280,6 +4336,7 @@ pub fn qlive_greedy_order_stats(
     Ok(())
 }
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QLiveFrontierOrderItem {
     neg_delta: i128,
@@ -5291,27 +4348,13 @@ struct QLiveFrontierOrderItem {
 }
 impl Ord for QLiveFrontierOrderItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (
-            self.neg_delta,
-            self.finish,
-            self.reuse,
-            self.neg_new_open,
-            self.neg_parent_count,
-        )
-            .cmp(&(
-                other.neg_delta,
-                other.finish,
-                other.reuse,
-                other.neg_new_open,
-                other.neg_parent_count,
-            ))
+        (self.neg_delta, self.finish, self.reuse, self.neg_new_open, self.neg_parent_count)
+            .cmp(&(other.neg_delta, other.finish, other.reuse, other.neg_new_open, other.neg_parent_count))
             .then_with(|| other.child.cmp(&self.child))
     }
 }
 impl PartialOrd for QLiveFrontierOrderItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 fn qlive_parent_weight(input: &FieldChainLayer, touches: &[QLiveChildTouch]) -> Vec<u64> {
@@ -5348,14 +4391,8 @@ fn qlive_frontier_order_key(
     for &p in &touch.parents {
         let pi = p as usize;
         let w = parent_weight[pi].max(1) as i128;
-        if remaining[pi] == 1 {
-            finish += w;
-        }
-        if open[pi] != 0 {
-            reuse += w;
-        } else {
-            new_open += w;
-        }
+        if remaining[pi] == 1 { finish += w; }
+        if open[pi] != 0 { reuse += w; } else { new_open += w; }
     }
     let delta = new_open - finish;
     QLiveFrontierOrderItem {
@@ -5403,48 +4440,22 @@ fn qlive_build_frontier_order(
                       touches: &[QLiveChildTouch],
                       parent_weight: &[u64]| {
         if !processed[ci] {
-            heap.push(qlive_frontier_order_key(
-                &touches[ci],
-                remaining,
-                open,
-                parent_weight,
-                ci,
-            ));
+            heap.push(qlive_frontier_order_key(&touches[ci], remaining, open, parent_weight, ci));
         }
     };
 
     while order.len() < by_child.len() {
         if heap.is_empty() {
-            while seed_pos < summary_order.len() && processed[summary_order[seed_pos]] {
-                seed_pos += 1;
-            }
+            while seed_pos < summary_order.len() && processed[summary_order[seed_pos]] { seed_pos += 1; }
             if seed_pos < summary_order.len() {
-                push_child(
-                    summary_order[seed_pos],
-                    &mut heap,
-                    &processed,
-                    &remaining,
-                    &open,
-                    &by_child,
-                    &parent_weight,
-                );
+                push_child(summary_order[seed_pos], &mut heap, &processed, &remaining, &open, &by_child, &parent_weight);
                 seed_pos += 1;
             }
         }
         let ci = loop {
-            let Some(item) = heap.pop() else {
-                break None;
-            };
-            if processed[item.child] {
-                continue;
-            }
-            let fresh = qlive_frontier_order_key(
-                &by_child[item.child],
-                &remaining,
-                &open,
-                &parent_weight,
-                item.child,
-            );
+            let Some(item) = heap.pop() else { break None; };
+            if processed[item.child] { continue; }
+            let fresh = qlive_frontier_order_key(&by_child[item.child], &remaining, &open, &parent_weight, item.child);
             if fresh != item {
                 stale_pops += 1;
                 heap.push(fresh);
@@ -5452,9 +4463,7 @@ fn qlive_build_frontier_order(
             }
             break Some(item.child);
         };
-        let Some(ci) = ci else {
-            continue;
-        };
+        let Some(ci) = ci else { continue; };
 
         processed[ci] = true;
         order.push(ci);
@@ -5466,38 +4475,16 @@ fn qlive_build_frontier_order(
                 active_fields += 1;
                 active_weight += parent_weight[pi].max(1) as u128;
                 if let Some(kids) = children_of_parent.get(&p) {
-                    for &k in kids {
-                        push_child(
-                            k,
-                            &mut heap,
-                            &processed,
-                            &remaining,
-                            &open,
-                            &by_child,
-                            &parent_weight,
-                        );
-                    }
+                    for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
                 }
             }
         }
         for &p in &t.parents {
             let pi = p as usize;
-            if remaining[pi] == 0 {
-                continue;
-            }
+            if remaining[pi] == 0 { continue; }
             remaining[pi] -= 1;
             if let Some(kids) = children_of_parent.get(&p) {
-                for &k in kids {
-                    push_child(
-                        k,
-                        &mut heap,
-                        &processed,
-                        &remaining,
-                        &open,
-                        &by_child,
-                        &parent_weight,
-                    );
-                }
+                for &k in kids { push_child(k, &mut heap, &processed, &remaining, &open, &by_child, &parent_weight); }
             }
             if remaining[pi] == 0 {
                 if open[pi] != 0 {
@@ -5544,9 +4531,7 @@ fn qlive_build_frontier_order(
     );
 
     let mut ordered = Vec::<QLiveChildTouch>::with_capacity(by_child.len());
-    for ci in order {
-        ordered.push(by_child[ci].clone());
-    }
+    for ci in order { ordered.push(by_child[ci].clone()); }
     ordered
 }
 
@@ -5566,25 +4551,15 @@ struct QLiveSpillWriter {
 
 impl QLiveSpillWriter {
     fn create(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
         let _ = std::fs::remove_file(path);
         let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-        Ok(Self {
-            path: path.to_path_buf(),
-            file,
-            total_records: 0,
-            runs: HashMap::new(),
-            run_count: 0,
-        })
+        Ok(Self { path: path.to_path_buf(), file, total_records: 0, runs: HashMap::new(), run_count: 0 })
     }
 
     fn spill_acc(&mut self, field: FieldId, acc: HashMap<u32, u32>) -> Result<u64> {
         use std::io::Write;
-        if acc.is_empty() {
-            return Ok(0);
-        }
+        if acc.is_empty() { return Ok(0); }
         let offset = self.total_records;
         let count = acc.len() as u32;
         for (bag_tail, mask) in acc {
@@ -5593,10 +4568,7 @@ impl QLiveSpillWriter {
         }
         self.total_records += count as u64;
         self.run_count += 1;
-        self.runs.entry(field).or_default().push(QLiveSpillRun {
-            offset_records: offset,
-            count,
-        });
+        self.runs.entry(field).or_default().push(QLiveSpillRun { offset_records: offset, count });
         Ok(count as u64)
     }
 
@@ -5612,15 +4584,10 @@ impl QLiveSpillWriter {
             self.file.write_all(&mask.to_le_bytes())?;
             count += 1;
         }
-        if count == 0 {
-            return Ok(0);
-        }
+        if count == 0 { return Ok(0); }
         self.total_records += count as u64;
         self.run_count += 1;
-        self.runs.entry(field).or_default().push(QLiveSpillRun {
-            offset_records: offset,
-            count,
-        });
+        self.runs.entry(field).or_default().push(QLiveSpillRun { offset_records: offset, count });
         Ok(count as u64)
     }
 
@@ -5631,7 +4598,8 @@ impl QLiveSpillWriter {
     }
 }
 
-fn qlive_spill_one_largest_capped(
+fn qlive_spill_field_capped(
+    field: FieldId,
     accs: &mut HashMap<FieldId, HashMap<u32, u32>>,
     spill: &mut QLiveSpillWriter,
     live_classes: &mut u64,
@@ -5639,20 +4607,18 @@ fn qlive_spill_one_largest_capped(
     cold: &mut [u8],
     max_spills_per_parent: u32,
 ) -> Result<(u64, bool)> {
-    let Some((&field, _)) = accs
-        .iter()
-        .filter(|(f, acc)| !acc.is_empty() && spill_count[**f as usize] < max_spills_per_parent)
-        .max_by_key(|(_, acc)| acc.len())
-    else {
+    let pi = field as usize;
+    // A sweep snapshot is consumed before contributions/closures resume. Keep
+    // this helper safe for an absent, empty, or already capped candidate too.
+    if spill_count[pi] >= max_spills_per_parent
+        || accs.get(&field).map_or(true, |acc| acc.is_empty())
+    {
         return Ok((0, false));
-    };
-    let Some(acc) = accs.remove(&field) else {
-        return Ok((0, false));
-    };
+    }
+    let acc = accs.remove(&field).unwrap();
     let n = acc.len() as u64;
     *live_classes = live_classes.saturating_sub(n);
     spill.spill_acc(field, acc)?;
-    let pi = field as usize;
     spill_count[pi] = spill_count[pi].saturating_add(1);
     let mut became_cold = false;
     if spill_count[pi] >= max_spills_per_parent && cold[pi] == 0 {
@@ -5661,6 +4627,65 @@ fn qlive_spill_one_largest_capped(
     }
     Ok((n, became_cold))
 }
+
+// No accumulator grows during a global spill sweep. Snapshot their sizes once,
+// rather than scanning every live field again for each removed accumulator.
+// The heap has one entry per eligible field (16 bytes on 64-bit hosts), with no
+// stale entries or persistent per-field metadata. Equal sizes prefer the lower
+// field ID, independently of randomized HashMap iteration order.
+fn qlive_spill_candidates(
+    accs: &HashMap<FieldId, HashMap<u32, u32>>,
+    spill_count: &[u32],
+    max_spills_per_parent: u32,
+) -> std::collections::BinaryHeap<(usize, std::cmp::Reverse<FieldId>)> {
+    let candidates: Vec<_> = accs.iter()
+        .filter(|(field, acc)| !acc.is_empty() && spill_count[**field as usize] < max_spills_per_parent)
+        .map(|(&field, acc)| (acc.len(), std::cmp::Reverse(field)))
+        .collect();
+    std::collections::BinaryHeap::from(candidates)
+}
+
+// Retain ordinary child workspaces across fields, but do not pin one unusually
+// large field's allocations for the rest of a multi-day backward construction.
+const QLIVE_RETAINED_PIECE_CLASSES: usize = 131_072;
+const QLIVE_RETAINED_CHILD_QIDS: usize = 1_048_576;
+
+fn qlive_release_oversized_child_buffers(qids: &mut Vec<u32>, read_buf: &mut Vec<u8>) {
+    if qids.capacity() > QLIVE_RETAINED_CHILD_QIDS { *qids = Vec::new(); }
+    if read_buf.capacity() > QLIVE_RETAINED_CHILD_QIDS * 3 { *read_buf = Vec::new(); }
+}
+
+fn qlive_reset_piece_classes(map: &mut HashMap<u32, u32>) {
+    if map.capacity() > QLIVE_RETAINED_PIECE_CLASSES {
+        *map = HashMap::with_capacity(4096);
+    } else {
+        map.clear();
+    }
+}
+
+fn qlive_collect_child_classes(
+    qids: &[u32],
+    qgraph: &QRevClassGraph,
+    parent_counts: &[u64; crate::piece::PIECE_COUNT],
+    by_piece: &mut [HashMap<u32, u32>; crate::piece::PIECE_COUNT],
+    stats: &mut QLiveStats,
+) {
+    for &qid in qids {
+        for placed in 0..crate::piece::PIECE_COUNT {
+            let parent_count = parent_counts[placed];
+            if parent_count == 0 { continue; }
+            let map = &mut by_piece[placed];
+            for rec in qgraph.records_for(qid, placed as u8) {
+                stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
+                *map.entry(rec.bag_tail).or_insert(0) |= rec.avail_mask;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "qexternal_frontier_tests.rs"]
+mod frontier_tests;
 
 fn qlive_finalize_field_with_spills(
     field: FieldId,
@@ -5691,6 +4716,8 @@ fn qlive_finalize_field_with_spills(
     }
     qlive_finalize_field(field, acc, qid_lookup, qids, spool)
 }
+
+
 
 /// Dry-run SSD-spill scheduler simulation for the frontier-delta order.
 ///
@@ -5750,26 +4777,19 @@ pub fn qlive_frontier_spill_sim(
     let max_spills = cfg.max_spills_per_parent.min(u8::MAX as u32) as u8;
 
     let spill_parent = |field: FieldId,
-                        acc: &mut HashMap<FieldId, u64>,
-                        spilled_by_field: &mut HashMap<FieldId, u64>,
-                        live_classes: &mut u64,
-                        spill_flush_records: &mut u64,
-                        spill_events: &mut u64,
-                        parents_cold_ever: &mut u64,
-                        active_cold_parents: &mut u64,
-                        cold: &mut [u8],
-                        spill_count: &mut [u8]|
-     -> u64 {
+                            acc: &mut HashMap<FieldId, u64>,
+                            spilled_by_field: &mut HashMap<FieldId, u64>,
+                            live_classes: &mut u64,
+                            spill_flush_records: &mut u64,
+                            spill_events: &mut u64,
+                            parents_cold_ever: &mut u64,
+                            active_cold_parents: &mut u64,
+                            cold: &mut [u8],
+                            spill_count: &mut [u8]| -> u64 {
         let pi = field as usize;
-        if cold[pi] != 0 {
-            return 0;
-        }
-        let Some(n) = acc.remove(&field) else {
-            return 0;
-        };
-        if n == 0 {
-            return 0;
-        }
+        if cold[pi] != 0 { return 0; }
+        let Some(n) = acc.remove(&field) else { return 0; };
+        if n == 0 { return 0; }
         *live_classes = live_classes.saturating_sub(n);
         *spill_flush_records = spill_flush_records.saturating_add(n);
         {
@@ -5852,26 +4872,17 @@ pub fn qlive_frontier_spill_sim(
         if cfg.global_live_class_limit > 0 && live_classes > cfg.global_live_class_limit {
             let target = target_after_global_spill.max(1);
             while live_classes > target {
-                let Some((&field, &n)) = acc
-                    .iter()
+                let Some((&field, &n)) = acc.iter()
                     .filter(|(&field, &n)| n != 0 && cold[field as usize] == 0)
                     .max_by_key(|(&field, &n)| {
                         let rem = remaining[field as usize].max(1) as u64;
                         let longevity = 64u64.saturating_sub((rem + 1).leading_zeros() as u64);
                         // Prefer large, long-lived parents.  Slightly prefer parents
                         // with fewer previous spills to avoid exhausting N on small accs.
-                        let remaining_spills = max_spills
-                            .saturating_sub(spill_count[field as usize])
-                            .max(1) as u64;
-                        n.saturating_mul(longevity.max(1))
-                            .saturating_mul(remaining_spills)
-                    })
-                else {
-                    break;
-                };
-                if n == 0 {
-                    break;
-                }
+                        let remaining_spills = max_spills.saturating_sub(spill_count[field as usize]).max(1) as u64;
+                        n.saturating_mul(longevity.max(1)).saturating_mul(remaining_spills)
+                    }) else { break; };
+                if n == 0 { break; }
                 let before = live_classes;
                 spill_parent(
                     field,
@@ -5885,9 +4896,7 @@ pub fn qlive_frontier_spill_sim(
                     &mut cold,
                     &mut spill_count,
                 );
-                if live_classes == before {
-                    break;
-                }
+                if live_classes == before { break; }
             }
         }
 
@@ -5966,10 +4975,7 @@ pub fn qlive_frontier_spill_sim(
         start.elapsed().as_secs_f64(),
     );
     println!("q_live_frontier_spill_sim max_live_classes={max_live_classes}");
-    println!(
-        "q_live_frontier_spill_sim avg_live_classes={:.3}",
-        live_classes_sum as f64 / touches.len().max(1) as f64
-    );
+    println!("q_live_frontier_spill_sim avg_live_classes={:.3}", live_classes_sum as f64 / touches.len().max(1) as f64);
     println!("q_live_frontier_spill_sim spill_flush_records={spill_flush_records}");
     println!("q_live_frontier_spill_sim cold_direct_records={cold_direct_records}");
     println!("q_live_frontier_spill_sim total_write_records={total_write_records}");
@@ -5985,6 +4991,7 @@ pub struct QLiveFrontierSpillConfig {
     pub per_field_class_limit: usize,
     pub max_spills_per_parent: u32,
 }
+
 
 /// Experimental lifetime-based q-class external step.
 ///
@@ -6026,6 +5033,10 @@ pub fn external_step_q_live(
 
     let mut accs = HashMap::<FieldId, HashMap<u32, u32>>::with_capacity(1_000_000);
     let mut qids_tmp = Vec::<u32>::new();
+    let mut child_qids = Vec::<u32>::new();
+    let mut child_read_buf = Vec::<u8>::new();
+    let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
+        std::array::from_fn(|_| HashMap::with_capacity(4096));
     let mut stats = QLiveStats::default();
     let mut live_classes: u64 = 0;
     let mut finalized_fields: u64 = 0;
@@ -6038,51 +5049,30 @@ pub fn external_step_q_live(
     );
 
     for (oi, touch) in touches.iter().enumerate() {
-        let qids = input.read_block_chains(touch.block_idx);
-        let child_field = touch.child_field;
-        let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
-            std::array::from_fn(|_| HashMap::<u32, u32>::with_capacity(4096));
-
-        for qid in qids {
-            for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
-                let recs = qgraph.records_for(qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
-                let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                if parent_count == 0 {
-                    continue;
-                }
-                let map = &mut by_piece[placed as usize];
-                for rec in recs {
-                    stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
-                    *map.entry(rec.bag_tail).or_insert(0) |= rec.avail_mask;
-                }
-            }
-        }
+        input.read_block_chains_into_with_buf(touch.block_idx, &mut child_qids, &mut child_read_buf);
+        let parents_by_piece: [&[FieldId]; crate::piece::PIECE_COUNT] =
+            std::array::from_fn(|placed| rgraph.edges(touch.child_field, placed as u8));
+        let parent_counts = std::array::from_fn(|placed| parents_by_piece[placed].len() as u64);
+        qlive_collect_child_classes(&child_qids, qgraph, &parent_counts, &mut by_piece, &mut stats);
 
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
             let map = &mut by_piece[placed as usize];
-            if map.is_empty() {
-                continue;
-            }
-            let parents = rgraph.edges(child_field, placed);
+            if map.is_empty() { continue; }
+            let parents = parents_by_piece[placed as usize];
+            let map_masked: u64 = map.values().map(|mask| mask.count_ones() as u64).sum();
             for &parent in parents {
-                let acc = accs
-                    .entry(parent)
-                    .or_insert_with(|| HashMap::with_capacity(map.len() * 2));
+                stats.emitted_records += map.len() as u64;
+                stats.local_chain_masked += map_masked;
+                let acc = accs.entry(parent).or_insert_with(|| HashMap::with_capacity(map.len() * 2));
                 for (&bag_tail, &mask) in map.iter() {
                     let e = acc.entry(bag_tail).or_insert(0);
-                    if *e == 0 {
-                        live_classes += 1;
-                    }
+                    if *e == 0 { live_classes += 1; }
                     *e |= mask;
-                    stats.emitted_records += 1;
-                    stats.local_chain_masked += mask.count_ones() as u64;
                 }
             }
-            map.clear();
+            qlive_reset_piece_classes(map);
         }
+        qlive_release_oversized_child_buffers(&mut child_qids, &mut child_read_buf);
 
         // This child field's complete contribution has been incorporated.
         // Decrement each touched parent once, regardless of how many qclasses it received.
@@ -6093,9 +5083,8 @@ pub fn external_step_q_live(
             if *r == 0 {
                 if let Some(acc) = accs.remove(&parent) {
                     live_classes = live_classes.saturating_sub(acc.len() as u64);
-                    let n =
-                        qlive_finalize_field(parent, acc, &qid_lookup, &mut qids_tmp, &mut spool)
-                            .with_context(|| format!("finalize live parent field {parent}"))?;
+                    let n = qlive_finalize_field(parent, acc, &qid_lookup, &mut qids_tmp, &mut spool)
+                        .with_context(|| format!("finalize live parent field {parent}"))?;
                     output_states += n;
                     finalized_fields += 1;
                 }
@@ -6120,10 +5109,7 @@ pub fn external_step_q_live(
     }
 
     if !accs.is_empty() {
-        eprintln!(
-            "q live warning: finalizing {} remaining accs at end",
-            accs.len()
-        );
+        eprintln!("q live warning: finalizing {} remaining accs at end", accs.len());
         let rest = std::mem::take(&mut accs);
         for (field, acc) in rest {
             let n = qlive_finalize_field(field, acc, &qid_lookup, &mut qids_tmp, &mut spool)?;
@@ -6148,33 +5134,13 @@ pub fn external_step_q_live(
     let finished = qlive_assemble_spool(&spool_path, metas, output_prefix)?;
     let _ = std::fs::remove_file(&spool_path);
     println!("q_external_live raw_pairs={}", stats.raw);
-    println!(
-        "q_external_live emitted_class_records={}",
-        stats.emitted_records
-    );
-    println!(
-        "q_external_live local_chain_masked={}",
-        stats.local_chain_masked
-    );
+    println!("q_external_live emitted_class_records={}", stats.emitted_records);
+    println!("q_external_live local_chain_masked={}", stats.local_chain_masked);
     println!("q_external_live output_states={finished}");
-    println!(
-        "q_external_live removed_dupes={}",
-        stats.raw.saturating_sub(finished)
-    );
-    println!(
-        "q_external_live output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "q_external_live output_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        finished * 5,
-        finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external live step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_live removed_dupes={}", stats.raw.saturating_sub(finished));
+    println!("q_external_live output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("q_external_live output_u24_plus_fp16_bytes={} ({:.3} GiB)", finished * 5, finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external live step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
 
@@ -6220,6 +5186,10 @@ pub fn external_step_q_live_frontier_spill(
 
     let mut accs = HashMap::<FieldId, HashMap<u32, u32>>::with_capacity(300_000);
     let mut qids_tmp = Vec::<u32>::new();
+    let mut child_qids = Vec::<u32>::new();
+    let mut child_read_buf = Vec::<u8>::new();
+    let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
+        std::array::from_fn(|_| HashMap::with_capacity(4096));
     let mut stats = QLiveStats::default();
     let mut live_classes: u64 = 0;
     let mut spilled_records: u64 = 0;
@@ -6242,60 +5212,34 @@ pub fn external_step_q_live_frontier_spill(
     );
 
     for (oi, touch) in touches.iter().enumerate() {
-        let qids = input.read_block_chains(touch.block_idx);
-        let child_field = touch.child_field;
-        let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
-            std::array::from_fn(|_| HashMap::<u32, u32>::with_capacity(4096));
-
-        for qid in qids {
-            for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
-                let recs = qgraph.records_for(qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
-                let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                if parent_count == 0 {
-                    continue;
-                }
-                let map = &mut by_piece[placed as usize];
-                for rec in recs {
-                    stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
-                    *map.entry(rec.bag_tail).or_insert(0) |= rec.avail_mask;
-                }
-            }
-        }
+        input.read_block_chains_into_with_buf(touch.block_idx, &mut child_qids, &mut child_read_buf);
+        let parents_by_piece: [&[FieldId]; crate::piece::PIECE_COUNT] =
+            std::array::from_fn(|placed| rgraph.edges(touch.child_field, placed as u8));
+        let parent_counts = std::array::from_fn(|placed| parents_by_piece[placed].len() as u64);
+        qlive_collect_child_classes(&child_qids, qgraph, &parent_counts, &mut by_piece, &mut stats);
 
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
             let map = &mut by_piece[placed as usize];
-            if map.is_empty() {
-                continue;
-            }
-            let parents = rgraph.edges(child_field, placed);
-            for &parent in parents {
+            if map.is_empty() { continue; }
+            let masked_count: u64 = map.values().map(|mask| mask.count_ones() as u64).sum();
+            for &parent in parents_by_piece[placed as usize] {
+                stats.emitted_records += map.len() as u64;
+                stats.local_chain_masked += masked_count;
                 let pi = parent as usize;
                 if cold[pi] != 0 {
                     let n = spill.spill_pairs_ref(parent, map.iter())?;
                     cold_direct_records += n;
                     spilled_records += n;
-                    stats.emitted_records += map.len() as u64;
-                    stats.local_chain_masked +=
-                        map.values().map(|m| m.count_ones() as u64).sum::<u64>();
                     continue;
                 }
 
                 let mut should_spill_parent = false;
                 {
-                    let acc = accs
-                        .entry(parent)
-                        .or_insert_with(|| HashMap::with_capacity(map.len() * 2));
+                    let acc = accs.entry(parent).or_insert_with(|| HashMap::with_capacity(map.len() * 2));
                     for (&bag_tail, &mask) in map.iter() {
                         let e = acc.entry(bag_tail).or_insert(0);
-                        if *e == 0 {
-                            live_classes += 1;
-                        }
+                        if *e == 0 { live_classes += 1; }
                         *e |= mask;
-                        stats.emitted_records += 1;
-                        stats.local_chain_masked += mask.count_ones() as u64;
                     }
                     if cfg.per_field_class_limit > 0 && acc.len() >= cfg.per_field_class_limit {
                         should_spill_parent = true;
@@ -6315,13 +5259,17 @@ pub fn external_step_q_live_frontier_spill(
                     }
                 }
             }
-            map.clear();
+            qlive_reset_piece_classes(map);
         }
+        qlive_release_oversized_child_buffers(&mut child_qids, &mut child_read_buf);
 
         if cfg.global_live_class_limit > 0 && live_classes > cfg.global_live_class_limit {
             let target = target_after_global_spill.max(1);
+            let mut candidates = qlive_spill_candidates(&accs, &spill_count, cfg.max_spills_per_parent);
             while live_classes > target {
-                let (n, became_cold) = qlive_spill_one_largest_capped(
+                let Some((_, std::cmp::Reverse(field))) = candidates.pop() else { break; };
+                let (n, became_cold) = qlive_spill_field_capped(
+                    field,
                     &mut accs,
                     &mut spill,
                     &mut live_classes,
@@ -6329,14 +5277,10 @@ pub fn external_step_q_live_frontier_spill(
                     &mut cold,
                     cfg.max_spills_per_parent,
                 )?;
-                if n == 0 {
-                    break;
-                }
+                if n == 0 { break; }
                 spilled_records += n;
                 spill_events += 1;
-                if became_cold {
-                    parents_cold_ever += 1;
-                }
+                if became_cold { parents_cold_ever += 1; }
             }
         }
 
@@ -6349,15 +5293,8 @@ pub fn external_step_q_live_frontier_spill(
             if *r == 0 {
                 let acc = accs.remove(&parent).unwrap_or_default();
                 live_classes = live_classes.saturating_sub(acc.len() as u64);
-                let n = qlive_finalize_field_with_spills(
-                    parent,
-                    acc,
-                    &mut spill,
-                    &qid_lookup,
-                    &mut qids_tmp,
-                    &mut spool,
-                )
-                .with_context(|| format!("finalize live frontier-spill parent field {parent}"))?;
+                let n = qlive_finalize_field_with_spills(parent, acc, &mut spill, &qid_lookup, &mut qids_tmp, &mut spool)
+                    .with_context(|| format!("finalize live frontier-spill parent field {parent}"))?;
                 output_states += n;
                 finalized_fields += 1;
             }
@@ -6386,30 +5323,15 @@ pub fn external_step_q_live_frontier_spill(
     }
 
     if !accs.is_empty() || !spill.runs.is_empty() {
-        eprintln!(
-            "q live frontier-spill warning: finalizing remaining accs={} spilled_fields={} at end",
-            accs.len(),
-            spill.runs.len()
-        );
-        let fields: Vec<FieldId> = accs
-            .keys()
-            .copied()
-            .chain(spill.runs.keys().copied())
-            .collect();
+        eprintln!("q live frontier-spill warning: finalizing remaining accs={} spilled_fields={} at end", accs.len(), spill.runs.len());
+        let fields: Vec<FieldId> = accs.keys().copied().chain(spill.runs.keys().copied()).collect();
         let mut fields = fields;
         fields.sort_unstable();
         fields.dedup();
         for field in fields {
             let acc = accs.remove(&field).unwrap_or_default();
             live_classes = live_classes.saturating_sub(acc.len() as u64);
-            let n = qlive_finalize_field_with_spills(
-                field,
-                acc,
-                &mut spill,
-                &qid_lookup,
-                &mut qids_tmp,
-                &mut spool,
-            )?;
+            let n = qlive_finalize_field_with_spills(field, acc, &mut spill, &qid_lookup, &mut qids_tmp, &mut spool)?;
             output_states += n;
             finalized_fields += 1;
         }
@@ -6442,43 +5364,23 @@ pub fn external_step_q_live_frontier_spill(
     let _ = std::fs::remove_file(&spool_path);
     let _ = std::fs::remove_file(&spill_path);
     println!("q_external_live_frontier_spill raw_pairs={}", stats.raw);
-    println!(
-        "q_external_live_frontier_spill emitted_class_records={}",
-        stats.emitted_records
-    );
-    println!(
-        "q_external_live_frontier_spill local_chain_masked={}",
-        stats.local_chain_masked
-    );
+    println!("q_external_live_frontier_spill emitted_class_records={}", stats.emitted_records);
+    println!("q_external_live_frontier_spill local_chain_masked={}", stats.local_chain_masked);
     println!("q_external_live_frontier_spill spilled_records={spilled_records}");
     println!("q_external_live_frontier_spill cold_direct_records={cold_direct_records}");
     println!("q_external_live_frontier_spill spill_events={spill_events}");
-    println!(
-        "q_external_live_frontier_spill spill_runs={}",
-        spill_run_count
-    );
+    println!("q_external_live_frontier_spill spill_runs={}", spill_run_count);
     println!("q_external_live_frontier_spill parents_cold_ever={parents_cold_ever}");
     println!("q_external_live_frontier_spill output_states={finished}");
-    println!(
-        "q_external_live_frontier_spill removed_dupes={}",
-        stats.raw.saturating_sub(finished)
-    );
-    println!(
-        "q_external_live_frontier_spill output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "q_external_live_frontier_spill output_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        finished * 5,
-        finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external live frontier-spill step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_live_frontier_spill removed_dupes={}", stats.raw.saturating_sub(finished));
+    println!("q_external_live_frontier_spill output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("q_external_live_frontier_spill output_u24_plus_fp16_bytes={} ({:.3} GiB)", finished * 5, finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external live frontier-spill step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
+
+
+
 
 fn qlive_write_closed_acc_run_only(
     field: FieldId,
@@ -6510,13 +5412,10 @@ fn qlive_materialize_class_and_spill_runs(
     closed_fields.sort_unstable();
     closed_fields.dedup();
     for w in closed_fields.windows(2) {
-        if w[0] >= w[1] {
-            bail!("closed fields are not strictly sorted after dedup");
-        }
+        if w[0] >= w[1] { bail!("closed fields are not strictly sorted after dedup"); }
     }
 
-    let mut class_by_field =
-        HashMap::<FieldId, (u32, u64)>::with_capacity(class_metas.len() * 2 + 1);
+    let mut class_by_field = HashMap::<FieldId, (u32, u64)>::with_capacity(class_metas.len() * 2 + 1);
     for (field, count, offset) in class_metas {
         if class_by_field.insert(field, (count, offset)).is_some() {
             bail!("duplicate class spool meta for field {field}");
@@ -6524,11 +5423,7 @@ fn qlive_materialize_class_and_spill_runs(
     }
 
     let mut class_file = std::fs::File::open(class_spool_path)?;
-    let mut spill_file = if spill_path.exists() {
-        Some(std::fs::File::open(spill_path)?)
-    } else {
-        None
-    };
+    let mut spill_file = if spill_path.exists() { Some(std::fs::File::open(spill_path)?) } else { None };
     let mut writer = FieldChainWriter::create(output_prefix)?;
     let mut bytes = Vec::<u8>::new();
     let mut acc = HashMap::<u32, u32>::new();
@@ -6561,9 +5456,7 @@ fn qlive_materialize_class_and_spill_runs(
         }
 
         if let Some(runs) = spill_runs.remove(&field) {
-            let Some(sf) = spill_file.as_mut() else {
-                bail!("spill runs exist but spill file is missing");
-            };
+            let Some(sf) = spill_file.as_mut() else { bail!("spill runs exist but spill file is missing"); };
             for run in runs {
                 let bytes_len = run.count as usize * 8;
                 bytes.resize(bytes_len, 0);
@@ -6619,17 +5512,13 @@ fn qlive_materialize_class_and_spill_runs(
                     let avail = mask.trailing_zeros() as u8;
                     mask &= mask - 1;
                     let qid = qid_from_lookup(qid_lookup, bag_tail, avail);
-                    if qid != QID_MISSING {
-                        qids.push(qid);
-                    }
+                    if qid != QID_MISSING { qids.push(qid); }
                 }
             }
             qids.sort_unstable();
             qids.dedup();
             field_count = qids.len() as u64;
-            for &qid in &qids {
-                writer.push_pair_key(q_pair_key(field, qid))?;
-            }
+            for &qid in &qids { writer.push_pair_key(q_pair_key(field, qid))?; }
             vec_fields += 1;
         }
         total += field_count;
@@ -6685,6 +5574,10 @@ pub fn external_step_q_live_frontier_spill_deferred(
 
     let mut accs = HashMap::<FieldId, HashMap<u32, u32>>::with_capacity(300_000);
     let mut class_tmp = Vec::<(u32, u32)>::new();
+    let mut child_qids = Vec::<u32>::new();
+    let mut child_read_buf = Vec::<u8>::new();
+    let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
+        std::array::from_fn(|_| HashMap::with_capacity(4096));
     let mut stats = QLiveStats::default();
     let mut live_classes: u64 = 0;
     let mut spilled_records: u64 = 0;
@@ -6707,60 +5600,35 @@ pub fn external_step_q_live_frontier_spill_deferred(
     );
 
     for (oi, touch) in touches.iter().enumerate() {
-        let qids = input.read_block_chains(touch.block_idx);
-        let child_field = touch.child_field;
-        let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
-            std::array::from_fn(|_| HashMap::<u32, u32>::with_capacity(4096));
-
-        for qid in qids {
-            for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
-                let recs = qgraph.records_for(qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
-                let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                if parent_count == 0 {
-                    continue;
-                }
-                let map = &mut by_piece[placed as usize];
-                for rec in recs {
-                    stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
-                    *map.entry(rec.bag_tail).or_insert(0) |= rec.avail_mask;
-                }
-            }
-        }
+        input.read_block_chains_into_with_buf(touch.block_idx, &mut child_qids, &mut child_read_buf);
+        let parents_by_piece: [&[FieldId]; crate::piece::PIECE_COUNT] =
+            std::array::from_fn(|placed| rgraph.edges(touch.child_field, placed as u8));
+        let parent_counts = std::array::from_fn(|placed| parents_by_piece[placed].len() as u64);
+        qlive_collect_child_classes(&child_qids, qgraph, &parent_counts, &mut by_piece, &mut stats);
 
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
             let map = &mut by_piece[placed as usize];
-            if map.is_empty() {
-                continue;
-            }
-            let parents = rgraph.edges(child_field, placed);
+            if map.is_empty() { continue; }
+            let parents = parents_by_piece[placed as usize];
             let map_masked: u64 = map.values().map(|m| m.count_ones() as u64).sum();
             for &parent in parents {
+                stats.emitted_records += map.len() as u64;
+                stats.local_chain_masked += map_masked;
                 let pi = parent as usize;
                 if cold[pi] != 0 {
                     let n = spill.spill_pairs_ref(parent, map.iter())?;
                     cold_direct_records += n;
                     spilled_records += n;
-                    stats.emitted_records += map.len() as u64;
-                    stats.local_chain_masked += map_masked;
                     continue;
                 }
 
                 let mut should_spill_parent = false;
                 {
-                    let acc = accs
-                        .entry(parent)
-                        .or_insert_with(|| HashMap::with_capacity(map.len() * 2));
+                    let acc = accs.entry(parent).or_insert_with(|| HashMap::with_capacity(map.len() * 2));
                     for (&bag_tail, &mask) in map.iter() {
                         let e = acc.entry(bag_tail).or_insert(0);
-                        if *e == 0 {
-                            live_classes += 1;
-                        }
+                        if *e == 0 { live_classes += 1; }
                         *e |= mask;
-                        stats.emitted_records += 1;
-                        stats.local_chain_masked += mask.count_ones() as u64;
                     }
                     if cfg.per_field_class_limit > 0 && acc.len() >= cfg.per_field_class_limit {
                         should_spill_parent = true;
@@ -6780,13 +5648,17 @@ pub fn external_step_q_live_frontier_spill_deferred(
                     }
                 }
             }
-            map.clear();
+            qlive_reset_piece_classes(map);
         }
+        qlive_release_oversized_child_buffers(&mut child_qids, &mut child_read_buf);
 
         if cfg.global_live_class_limit > 0 && live_classes > cfg.global_live_class_limit {
             let target = target_after_global_spill.max(1);
+            let mut candidates = qlive_spill_candidates(&accs, &spill_count, cfg.max_spills_per_parent);
             while live_classes > target {
-                let (n, became_cold) = qlive_spill_one_largest_capped(
+                let Some((_, std::cmp::Reverse(field))) = candidates.pop() else { break; };
+                let (n, became_cold) = qlive_spill_field_capped(
+                    field,
                     &mut accs,
                     &mut spill,
                     &mut live_classes,
@@ -6794,14 +5666,10 @@ pub fn external_step_q_live_frontier_spill_deferred(
                     &mut cold,
                     cfg.max_spills_per_parent,
                 )?;
-                if n == 0 {
-                    break;
-                }
+                if n == 0 { break; }
                 spilled_records += n;
                 spill_events += 1;
-                if became_cold {
-                    parents_cold_ever += 1;
-                }
+                if became_cold { parents_cold_ever += 1; }
             }
         }
 
@@ -6812,16 +5680,8 @@ pub fn external_step_q_live_frontier_spill_deferred(
             if *r == 0 {
                 let acc = accs.remove(&parent).unwrap_or_default();
                 live_classes = live_classes.saturating_sub(acc.len() as u64);
-                let n = qlive_write_closed_class_run_with_spills(
-                    parent,
-                    acc,
-                    &mut spill,
-                    &mut class_tmp,
-                    &mut class_spool,
-                )
-                .with_context(|| {
-                    format!("close live frontier-spill-deferred parent field {parent}")
-                })?;
+                let n = qlive_write_closed_class_run_with_spills(parent, acc, &mut spill, &mut class_tmp, &mut class_spool)
+                    .with_context(|| format!("close live frontier-spill-deferred parent field {parent}"))?;
                 closed_class_records += n;
                 finalized_fields += 1;
             }
@@ -6851,24 +5711,14 @@ pub fn external_step_q_live_frontier_spill_deferred(
 
     if !accs.is_empty() || !spill.runs.is_empty() {
         eprintln!("q live frontier-spill-deferred warning: closing remaining accs={} spilled_fields={} at end", accs.len(), spill.runs.len());
-        let fields: Vec<FieldId> = accs
-            .keys()
-            .copied()
-            .chain(spill.runs.keys().copied())
-            .collect();
+        let fields: Vec<FieldId> = accs.keys().copied().chain(spill.runs.keys().copied()).collect();
         let mut fields = fields;
         fields.sort_unstable();
         fields.dedup();
         for field in fields {
             let acc = accs.remove(&field).unwrap_or_default();
             live_classes = live_classes.saturating_sub(acc.len() as u64);
-            let n = qlive_write_closed_class_run_with_spills(
-                field,
-                acc,
-                &mut spill,
-                &mut class_tmp,
-                &mut class_spool,
-            )?;
+            let n = qlive_write_closed_class_run_with_spills(field, acc, &mut spill, &mut class_tmp, &mut class_spool)?;
             closed_class_records += n;
             finalized_fields += 1;
         }
@@ -6897,11 +5747,7 @@ pub fn external_step_q_live_frontier_spill_deferred(
         start.elapsed().as_secs_f64()
     );
 
-    eprintln!(
-        "q live frontier-spill-deferred materialize start class_records={} fields={}",
-        closed_class_records,
-        class_metas.len()
-    );
+    eprintln!("q live frontier-spill-deferred materialize start class_records={} fields={}", closed_class_records, class_metas.len());
     let lookup_start = Instant::now();
     let qid_lookup = build_qid_lookup(q_index);
     eprintln!(
@@ -6909,53 +5755,27 @@ pub fn external_step_q_live_frontier_spill_deferred(
         qid_lookup.len() * std::mem::size_of::<u32>(),
         lookup_start.elapsed().as_secs_f64()
     );
-    let finished =
-        qlive_materialize_class_spool(&class_spool_path, class_metas, &qid_lookup, output_prefix)?;
+    let finished = qlive_materialize_class_spool(&class_spool_path, class_metas, &qid_lookup, output_prefix)?;
     let _ = std::fs::remove_file(&class_spool_path);
     let _ = std::fs::remove_file(&spill_path);
 
-    println!(
-        "q_external_live_frontier_spill_deferred raw_pairs={}",
-        stats.raw
-    );
-    println!(
-        "q_external_live_frontier_spill_deferred emitted_class_records={}",
-        stats.emitted_records
-    );
-    println!(
-        "q_external_live_frontier_spill_deferred local_chain_masked={}",
-        stats.local_chain_masked
-    );
+    println!("q_external_live_frontier_spill_deferred raw_pairs={}", stats.raw);
+    println!("q_external_live_frontier_spill_deferred emitted_class_records={}", stats.emitted_records);
+    println!("q_external_live_frontier_spill_deferred local_chain_masked={}", stats.local_chain_masked);
     println!("q_external_live_frontier_spill_deferred closed_class_records={closed_class_records}");
     println!("q_external_live_frontier_spill_deferred spilled_records={spilled_records}");
     println!("q_external_live_frontier_spill_deferred cold_direct_records={cold_direct_records}");
     println!("q_external_live_frontier_spill_deferred spill_events={spill_events}");
-    println!(
-        "q_external_live_frontier_spill_deferred spill_runs={}",
-        spill_run_count
-    );
+    println!("q_external_live_frontier_spill_deferred spill_runs={}", spill_run_count);
     println!("q_external_live_frontier_spill_deferred parents_cold_ever={parents_cold_ever}");
     println!("q_external_live_frontier_spill_deferred output_states={finished}");
-    println!(
-        "q_external_live_frontier_spill_deferred removed_dupes={}",
-        stats.raw.saturating_sub(finished)
-    );
-    println!(
-        "q_external_live_frontier_spill_deferred output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "q_external_live_frontier_spill_deferred output_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        finished * 5,
-        finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external live frontier-spill-deferred step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_live_frontier_spill_deferred removed_dupes={}", stats.raw.saturating_sub(finished));
+    println!("q_external_live_frontier_spill_deferred output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("q_external_live_frontier_spill_deferred output_u24_plus_fp16_bytes={} ({:.3} GiB)", finished * 5, finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external live frontier-spill-deferred step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }
+
 
 /// Strong deferred frontier-spill step.  Defers spill-run merge as well as qid materialization out of the child-processing loop; materialization uses a hybrid Vec/bitset writer.
 ///
@@ -6991,6 +5811,10 @@ pub fn external_step_q_live_frontier_spill_strong(
     let mut accs = HashMap::<FieldId, HashMap<u32, u32>>::with_capacity(300_000);
     let mut class_tmp = Vec::<(u32, u32)>::new();
     let mut closed_fields = Vec::<FieldId>::with_capacity(input.metas.len());
+    let mut child_qids = Vec::<u32>::new();
+    let mut child_read_buf = Vec::<u8>::new();
+    let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
+        std::array::from_fn(|_| HashMap::with_capacity(4096));
     let mut stats = QLiveStats::default();
     let mut live_classes: u64 = 0;
     let mut spilled_records: u64 = 0;
@@ -7013,60 +5837,35 @@ pub fn external_step_q_live_frontier_spill_strong(
     );
 
     for (oi, touch) in touches.iter().enumerate() {
-        let qids = input.read_block_chains(touch.block_idx);
-        let child_field = touch.child_field;
-        let mut by_piece: [HashMap<u32, u32>; crate::piece::PIECE_COUNT] =
-            std::array::from_fn(|_| HashMap::<u32, u32>::with_capacity(4096));
-
-        for qid in qids {
-            for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
-                let recs = qgraph.records_for(qid, placed);
-                if recs.is_empty() {
-                    continue;
-                }
-                let parent_count = rgraph.edges(child_field, placed).len() as u64;
-                if parent_count == 0 {
-                    continue;
-                }
-                let map = &mut by_piece[placed as usize];
-                for rec in recs {
-                    stats.raw += rec.avail_mask.count_ones() as u64 * parent_count;
-                    *map.entry(rec.bag_tail).or_insert(0) |= rec.avail_mask;
-                }
-            }
-        }
+        input.read_block_chains_into_with_buf(touch.block_idx, &mut child_qids, &mut child_read_buf);
+        let parents_by_piece: [&[FieldId]; crate::piece::PIECE_COUNT] =
+            std::array::from_fn(|placed| rgraph.edges(touch.child_field, placed as u8));
+        let parent_counts = std::array::from_fn(|placed| parents_by_piece[placed].len() as u64);
+        qlive_collect_child_classes(&child_qids, qgraph, &parent_counts, &mut by_piece, &mut stats);
 
         for placed in 0u8..crate::piece::PIECE_COUNT as u8 {
             let map = &mut by_piece[placed as usize];
-            if map.is_empty() {
-                continue;
-            }
-            let parents = rgraph.edges(child_field, placed);
+            if map.is_empty() { continue; }
+            let parents = parents_by_piece[placed as usize];
             let map_masked: u64 = map.values().map(|m| m.count_ones() as u64).sum();
             for &parent in parents {
+                stats.emitted_records += map.len() as u64;
+                stats.local_chain_masked += map_masked;
                 let pi = parent as usize;
                 if cold[pi] != 0 {
                     let n = spill.spill_pairs_ref(parent, map.iter())?;
                     cold_direct_records += n;
                     spilled_records += n;
-                    stats.emitted_records += map.len() as u64;
-                    stats.local_chain_masked += map_masked;
                     continue;
                 }
 
                 let mut should_spill_parent = false;
                 {
-                    let acc = accs
-                        .entry(parent)
-                        .or_insert_with(|| HashMap::with_capacity(map.len() * 2));
+                    let acc = accs.entry(parent).or_insert_with(|| HashMap::with_capacity(map.len() * 2));
                     for (&bag_tail, &mask) in map.iter() {
                         let e = acc.entry(bag_tail).or_insert(0);
-                        if *e == 0 {
-                            live_classes += 1;
-                        }
+                        if *e == 0 { live_classes += 1; }
                         *e |= mask;
-                        stats.emitted_records += 1;
-                        stats.local_chain_masked += mask.count_ones() as u64;
                     }
                     if cfg.per_field_class_limit > 0 && acc.len() >= cfg.per_field_class_limit {
                         should_spill_parent = true;
@@ -7086,13 +5885,17 @@ pub fn external_step_q_live_frontier_spill_strong(
                     }
                 }
             }
-            map.clear();
+            qlive_reset_piece_classes(map);
         }
+        qlive_release_oversized_child_buffers(&mut child_qids, &mut child_read_buf);
 
         if cfg.global_live_class_limit > 0 && live_classes > cfg.global_live_class_limit {
             let target = target_after_global_spill.max(1);
+            let mut candidates = qlive_spill_candidates(&accs, &spill_count, cfg.max_spills_per_parent);
             while live_classes > target {
-                let (n, became_cold) = qlive_spill_one_largest_capped(
+                let Some((_, std::cmp::Reverse(field))) = candidates.pop() else { break; };
+                let (n, became_cold) = qlive_spill_field_capped(
+                    field,
                     &mut accs,
                     &mut spill,
                     &mut live_classes,
@@ -7100,14 +5903,10 @@ pub fn external_step_q_live_frontier_spill_strong(
                     &mut cold,
                     cfg.max_spills_per_parent,
                 )?;
-                if n == 0 {
-                    break;
-                }
+                if n == 0 { break; }
                 spilled_records += n;
                 spill_events += 1;
-                if became_cold {
-                    parents_cold_ever += 1;
-                }
+                if became_cold { parents_cold_ever += 1; }
             }
         }
 
@@ -7118,11 +5917,8 @@ pub fn external_step_q_live_frontier_spill_strong(
             if *r == 0 {
                 let acc = accs.remove(&parent).unwrap_or_default();
                 live_classes = live_classes.saturating_sub(acc.len() as u64);
-                let n =
-                    qlive_write_closed_acc_run_only(parent, acc, &mut class_tmp, &mut class_spool)
-                        .with_context(|| {
-                            format!("close live frontier-spill-strong parent field {parent}")
-                        })?;
+                let n = qlive_write_closed_acc_run_only(parent, acc, &mut class_tmp, &mut class_spool)
+                    .with_context(|| format!("close live frontier-spill-strong parent field {parent}"))?;
                 closed_class_records += n;
                 closed_fields.push(parent);
                 finalized_fields += 1;
@@ -7190,11 +5986,7 @@ pub fn external_step_q_live_frontier_spill_strong(
         start.elapsed().as_secs_f64()
     );
 
-    eprintln!(
-        "q live frontier-spill-strong materialize start class_records={} fields={}",
-        closed_class_records,
-        class_metas.len()
-    );
+    eprintln!("q live frontier-spill-strong materialize start class_records={} fields={}", closed_class_records, class_metas.len());
     let lookup_start = Instant::now();
     let qid_lookup = build_qid_lookup(q_index);
     eprintln!(
@@ -7215,45 +6007,19 @@ pub fn external_step_q_live_frontier_spill_strong(
     let _ = std::fs::remove_file(&class_spool_path);
     let _ = std::fs::remove_file(&spill_path);
 
-    println!(
-        "q_external_live_frontier_spill_strong raw_pairs={}",
-        stats.raw
-    );
-    println!(
-        "q_external_live_frontier_spill_strong emitted_class_records={}",
-        stats.emitted_records
-    );
-    println!(
-        "q_external_live_frontier_spill_strong local_chain_masked={}",
-        stats.local_chain_masked
-    );
+    println!("q_external_live_frontier_spill_strong raw_pairs={}", stats.raw);
+    println!("q_external_live_frontier_spill_strong emitted_class_records={}", stats.emitted_records);
+    println!("q_external_live_frontier_spill_strong local_chain_masked={}", stats.local_chain_masked);
     println!("q_external_live_frontier_spill_strong closed_class_records={closed_class_records}");
     println!("q_external_live_frontier_spill_strong spilled_records={spilled_records}");
     println!("q_external_live_frontier_spill_strong cold_direct_records={cold_direct_records}");
     println!("q_external_live_frontier_spill_strong spill_events={spill_events}");
-    println!(
-        "q_external_live_frontier_spill_strong spill_runs={}",
-        spill_run_count
-    );
+    println!("q_external_live_frontier_spill_strong spill_runs={}", spill_run_count);
     println!("q_external_live_frontier_spill_strong parents_cold_ever={parents_cold_ever}");
     println!("q_external_live_frontier_spill_strong output_states={finished}");
-    println!(
-        "q_external_live_frontier_spill_strong removed_dupes={}",
-        stats.raw.saturating_sub(finished)
-    );
-    println!(
-        "q_external_live_frontier_spill_strong output_u24_membership_bytes={} ({:.3} GiB)",
-        finished * 3,
-        finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "q_external_live_frontier_spill_strong output_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        finished * 5,
-        finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    eprintln!(
-        "q external live frontier-spill-strong step elapsed={:.3}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("q_external_live_frontier_spill_strong removed_dupes={}", stats.raw.saturating_sub(finished));
+    println!("q_external_live_frontier_spill_strong output_u24_membership_bytes={} ({:.3} GiB)", finished * 3, finished as f64 * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("q_external_live_frontier_spill_strong output_u24_plus_fp16_bytes={} ({:.3} GiB)", finished * 5, finished as f64 * 5.0 / 1024.0 / 1024.0 / 1024.0);
+    eprintln!("q external live frontier-spill-strong step elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(finished)
 }

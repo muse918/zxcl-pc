@@ -59,10 +59,7 @@ impl FieldGraph {
     }
 
     pub fn hash_lookup(&self, hash: u64) -> Option<FieldId> {
-        self.hashes
-            .iter()
-            .position(|&h| h == hash)
-            .map(|i| i as FieldId)
+        self.hashes.iter().position(|&h| h == hash).map(|i| i as FieldId)
     }
 
     pub fn summary(&self) -> GraphSummary {
@@ -131,17 +128,10 @@ pub fn parse_graph_bin(bytes: &[u8]) -> Result<FieldGraph> {
     }
 
     if pos != bytes.len() {
-        eprintln!(
-            "warning: graph.bin has trailing bytes: {}",
-            bytes.len() - pos
-        );
+        eprintln!("warning: graph.bin has trailing bytes: {}", bytes.len() - pos);
     }
 
-    Ok(FieldGraph {
-        hashes,
-        offsets,
-        targets,
-    })
+    Ok(FieldGraph { hashes, offsets, targets })
 }
 
 #[inline]

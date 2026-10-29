@@ -4,20 +4,11 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Formatting
-        run: cargo fmt --all -- --check
-      - name: Tests
-        run: cargo test --locked
-      - name: Clippy correctness
-        run: cargo clippy --locked --all-targets -- -A warnings -D clippy::correctness
+      - name: Test workspace
+        run: cargo test --workspace

@@ -52,11 +52,7 @@ pub fn decode_tail5(mut x: u32) -> [u8; 5] {
 #[inline]
 pub fn encode_avail_pair(a: u8, b: u8) -> u8 {
     debug_assert!(a < 7 && b < 7);
-    let (x, y) = if a <= b {
-        (a as u32, b as u32)
-    } else {
-        (b as u32, a as u32)
-    };
+    let (x, y) = if a <= b { (a as u32, b as u32) } else { (b as u32, a as u32) };
     // number of pairs whose first element is < x:
     // sum_{i=0}^{x-1} (7-i) = 7x - x(x-1)/2
     (7 * x - (x * x.saturating_sub(1)) / 2 + (y - x)) as u8
@@ -89,11 +85,7 @@ pub fn unpack_qchain_key(key: u32) -> QChainState {
     let avail = (key & 0x1F) as u8;
     let tail5 = (key >> 5) & 0x7FFF;
     let bag_mask = ((key >> 20) & 0x7F) as u8;
-    QChainState {
-        avail,
-        tail5,
-        bag_mask,
-    }
+    QChainState { avail, tail5, bag_mask }
 }
 
 #[inline]
@@ -128,21 +120,13 @@ pub fn after_reveal_forward(old_bag: u8, revealed: u8) -> u8 {
     let bit = 1u8 << revealed;
     debug_assert!((old_bag & bit) != 0);
     let rest = old_bag & !bit;
-    if rest == 0 {
-        FULL_BAG
-    } else {
-        rest
-    }
+    if rest == 0 { FULL_BAG } else { rest }
 }
 
 pub fn q_forward_after_reveal(s: QChainState, placed: u8, revealed: u8) -> Option<QChainState> {
-    if (s.bag_mask & (1u8 << revealed)) == 0 {
-        return None;
-    }
+    if (s.bag_mask & (1u8 << revealed)) == 0 { return None; }
     let (a, b) = decode_avail_pair(s.avail);
-    if placed != a && placed != b {
-        return None;
-    }
+    if placed != a && placed != b { return None; }
 
     let remaining = if a == b {
         a
@@ -157,11 +141,7 @@ pub fn q_forward_after_reveal(s: QChainState, placed: u8, revealed: u8) -> Optio
     let next_tail5 = encode_tail5([tail[1], tail[2], tail[3], tail[4], revealed]);
     let next_bag = after_reveal_forward(s.bag_mask, revealed);
 
-    Some(QChainState {
-        avail: next_avail,
-        tail5: next_tail5,
-        bag_mask: next_bag,
-    })
+    Some(QChainState { avail: next_avail, tail5: next_tail5, bag_mask: next_bag })
 }
 
 #[inline]
@@ -183,17 +163,13 @@ pub fn reverse_qchain_state(new_s: QChainState, out: &mut Vec<(u8, QChainState)>
 
     let new_tail = decode_tail5(new_s.tail5);
     let revealed = new_tail[4];
-    let Some(old_bag) = reverse_bag(new_s.bag_mask, revealed) else {
-        return;
-    };
+    let Some(old_bag) = reverse_bag(new_s.bag_mask, revealed) else { return; };
 
     let (x, y) = decode_avail_pair(new_s.avail);
     let choices = [(x, y), (y, x)]; // (remaining, old_q1)
 
     for (choice_idx, &(remaining, old_q1)) in choices.iter().enumerate() {
-        if x == y && choice_idx == 1 {
-            break;
-        }
+        if x == y && choice_idx == 1 { break; }
 
         let old_tail5 = encode_tail5([old_q1, new_tail[0], new_tail[1], new_tail[2], new_tail[3]]);
 
@@ -235,28 +211,17 @@ pub fn enumerate_qstates(old_index: &StateIndex) -> QStateIndex {
         old_to_qid.push(qid);
     }
 
-    QStateIndex {
-        states,
-        key_to_id,
-        old_to_qid,
-        count_by_popcount,
-    }
+    QStateIndex { states, key_to_id, old_to_qid, count_by_popcount }
 }
 
 pub fn print_qstate_stats(old_index: &StateIndex, q_index: &QStateIndex) {
     println!("old_chain_states={}", old_index.states.len());
     println!("qchain_states={}", q_index.states.len());
-    println!(
-        "qchain_ratio={:.6}",
-        q_index.states.len() as f64 / old_index.states.len() as f64
-    );
+    println!("qchain_ratio={:.6}", q_index.states.len() as f64 / old_index.states.len() as f64);
     for k in 1..=7usize {
         let old = old_index.count_by_popcount[k];
         let q = q_index.count_by_popcount[k];
-        println!(
-            "qchain popcount={k} old={old} q={q} ratio={:.6}",
-            q as f64 / old as f64
-        );
+        println!("qchain popcount={k} old={old} q={q} ratio={:.6}", q as f64 / old as f64);
     }
 }
 

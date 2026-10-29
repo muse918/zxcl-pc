@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::graph::{FieldGraph, FieldId, NUM_FIELDS, PIECE_COUNT};
+use crate::graph::{FieldId, FieldGraph, NUM_FIELDS, PIECE_COUNT};
 
 const MAGIC: &[u8; 8] = b"RGRPH002";
 
@@ -66,21 +66,16 @@ pub fn build_reverse_graph(graph: &FieldGraph) -> ReverseGraph {
     for f in 0..NUM_FIELDS {
         offsets[f][0] = total;
         for p in 0..PIECE_COUNT {
-            total = total
-                .checked_add(counts[f][p])
-                .expect("reverse graph too large");
+            total = total.checked_add(counts[f][p]).expect("reverse graph too large");
             offsets[f][p + 1] = total;
         }
     }
 
-    let mut cursor = offsets
-        .iter()
-        .map(|x| {
-            let mut a = [0u32; PIECE_COUNT];
-            a.copy_from_slice(&x[..PIECE_COUNT]);
-            a
-        })
-        .collect::<Vec<_>>();
+    let mut cursor = offsets.iter().map(|x| {
+        let mut a = [0u32; PIECE_COUNT];
+        a.copy_from_slice(&x[..PIECE_COUNT]);
+        a
+    }).collect::<Vec<_>>();
 
     let mut sources = vec![0u32; total as usize];
 
@@ -105,8 +100,7 @@ pub fn build_reverse_graph(graph: &FieldGraph) -> ReverseGraph {
 
 pub fn save_reverse_graph(path: impl AsRef<Path>, rg: &ReverseGraph) -> Result<()> {
     let path = path.as_ref();
-    let file =
-        fs::File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+    let file = fs::File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
     let mut w = BufWriter::new(file);
 
     w.write_all(MAGIC)?;
@@ -194,10 +188,6 @@ fn read_u24_le(bytes: &[u8]) -> u32 {
 
 fn write_u24_le<W: Write>(w: &mut W, x: u32) -> Result<()> {
     debug_assert!(x < (1u32 << 24));
-    w.write_all(&[
-        (x & 0xFF) as u8,
-        ((x >> 8) & 0xFF) as u8,
-        ((x >> 16) & 0xFF) as u8,
-    ])?;
+    w.write_all(&[(x & 0xFF) as u8, ((x >> 8) & 0xFF) as u8, ((x >> 16) & 0xFF) as u8])?;
     Ok(())
 }

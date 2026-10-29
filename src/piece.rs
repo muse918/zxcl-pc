@@ -42,11 +42,7 @@ pub fn after_reveal(mask: u8, p: Piece) -> u8 {
     let bit = 1u8 << p;
     debug_assert!((mask & bit) != 0);
     let rest = mask & !bit;
-    if rest == 0 {
-        FULL_BAG
-    } else {
-        rest
-    }
+    if rest == 0 { FULL_BAG } else { rest }
 }
 
 pub fn mask_to_string(mask: u8) -> String {

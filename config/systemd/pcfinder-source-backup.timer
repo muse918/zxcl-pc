@@ -1,0 +1,13 @@
+[Unit]
+Description=Back up pcfinder source every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=30
+AccuracySec=10
+Unit=pcfinder-source-backup.service
+
+[Install]
+WantedBy=timers.target
+

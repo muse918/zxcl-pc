@@ -63,9 +63,49 @@ The remaining variables printed by `env` control thread counts, memory caps, sha
 sizes, caches, GMRES limits and numerical tolerances. The checked-in profiles are
 starting points for different machines; every value can be overridden.
 
-The scripts never delete previous results automatically. A stage refuses to overwrite
-an incompatible completed output; move or remove stale output deliberately before
-rerunning it.
+Solver stages reuse results only when their completion record matches the graph,
+pruned index, numerical inputs and current output destination. Files without a valid
+completion record are rebuilt. The first identity check hashes the graph and pruned
+chain files; later checks cache those hashes using file version metadata. Policy
+improvement deletes its own temporary rolling scratch directory after the stage, and
+preserves files outside that directory.
+
+### Sweep work and memory limits
+
+Greedy and fixed-policy sweeps share a state/byte-bounded scheduler. Adjacent chunks
+reuse their next-layer lookup cache, while the aggregate state and byte limits keep
+large field blocks from turning a lookup group into an unbounded allocation.
+
+| Variable | Purpose |
+|---|---|
+| `FULL_MDP_BLOCK_CHUNK` | Maximum field blocks in one base chunk |
+| `FULL_MDP_LOOKUP_GROUP_CHUNKS` | Maximum adjacent chunks sharing one lookup |
+| `FULL_MDP_TASK_MAX_STATES` | Group state limit; default 2,000,000 |
+| `FULL_MDP_TASK_MAX_MIB` | Estimated group working-byte limit; default 64 MiB |
+| `FULL_MDP_MEMORY_MAX_GIB` | Combined heap planning budget; default 32 GiB |
+| `FULL_MDP_MEMORY_RESERVE_GIB` | Reserve for graph, indexes, GMRES basis, cache metadata and allocation overhead |
+| `FULL_MDP_CACHE_STATS`, `FULL_MDP_ACTION_STATS` | Optional cache/action counters in the actual sweep paths |
+| `FULL_MDP_RAM_BITMAP_MIN_COUNT` | Experimental bitmap+rank threshold; `0`/unset disables it, `128` enables memory-beneficial candidates |
+
+An indivisible field larger than a task limit runs alone and is charged in full.
+The scheduler reduces worker count and per-worker cache payload when resident value
+layers consume the budget; a candidate RAM output can fall back to a file sink.
+The provided profiles set explicit 128 GiB and 28 GiB planning budgets. The reserve
+must cover the GMRES basis and other live allocations for the selected run. File
+mappings and OS page cache are reclaimable and excluded from pinned anonymous layer
+bytes, so this planner does not replace an OS process/cgroup limit.
+
+Bitmap+rank stores membership and offsets into the pinned values, avoiding a copy of
+the values. It preserves reveal order and supports promotion to the existing dense
+cache. It stays opt-in because building a new bitmap can outweigh faster lookups for
+cold fields. Measure with the same cache budget before enabling it for a long run.
+
+See [OPTIMIZATION_VALIDATION.md](OPTIMIZATION_VALIDATION.md) for the regression
+checks, bounded real-data comparisons and measurement limits.
+The experimental pre-reveal boundary, direct L9 lookup and DAG backends are
+described separately in [BOUNDARY_DAG.md](BOUNDARY_DAG.md).
+The full-boundary compiled L9 opt-in and bounded L8 expression-sharing probe are
+described in [LOOP1_COMPILED.md](LOOP1_COMPILED.md).
 
 ## 3. Obtain and verify the field graph
 
@@ -135,7 +175,17 @@ For each round, the script:
 
 The safety limit is eight PI rounds (`MAX_PI_ROUNDS=8`). The solver stops earlier when
 two consecutive policies are identical. Increase the limit only if your run reaches
-it. The script reuses the initialization seed when GMRES needs a cold start.
+it. GMRES starts from the previous accepted policy value, using the initialization
+seed only for the first round. An already converged start skips Krylov iterations,
+while the final actual f32 Bellman residual check still runs. Accepted values are
+published atomically after that check, and failed or interrupted results receive no
+completion certificate.
+
+PI improvement uses `FULL_MDP_POLICY_ONLY=1`: it retains policies and layer-0 values,
+uses RAM for adjacent value layers when they fit, and spills larger layers into an
+invocation-owned temporary directory. This avoids retaining a full value snapshot
+for every PI round. Standalone emission and `finalize` still materialize all ten
+value layers by default.
 
 The accepted f32 Bellman infinity-norm floor defaults to `3e-3`. Lower values may be
 unreachable at V around 4,000 because a few f32 ULPs already exceed `1e-3`.

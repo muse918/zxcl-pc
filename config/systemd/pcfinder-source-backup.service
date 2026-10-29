@@ -1,0 +1,20 @@
+[Unit]
+Description=Verify and back up pcfinder source to the home disk
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/libexec/pcfinder-backup-sources.py --source /mnt/fast2/muse918/pcfinder/zxcl-pc --destination %h/pcfinder-source-backups/zxcl-pc
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+CPUAffinity=0
+CPUQuota=50%
+MemoryMax=256M
+MemorySwapMax=0
+OOMPolicy=kill
+TasksMax=32
+RuntimeMaxSec=180
+TimeoutStopSec=3
+KillMode=control-group
+NoNewPrivileges=yes
+

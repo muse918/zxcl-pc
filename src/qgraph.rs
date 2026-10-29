@@ -77,9 +77,7 @@ impl QRevClassGraph {
 }
 
 fn merge_piece_records(mut v: Vec<QRevClassRec>) -> Vec<QRevClassRec> {
-    if v.is_empty() {
-        return v;
-    }
+    if v.is_empty() { return v; }
     v.sort_unstable_by_key(|r| r.bag_tail);
     let mut out = Vec::<QRevClassRec>::with_capacity(v.len());
     for rec in v {
@@ -108,18 +106,13 @@ pub fn build_qforward_graph(q_index: &QStateIndex) -> QForwardGraph {
         for placed in 0u8..PIECE_COUNT as u8 {
             let before = records.len();
             for reveal in 0u8..PIECE_COUNT as u8 {
-                let Some(child) = q_forward_after_reveal(parent, placed, reveal) else {
-                    continue;
-                };
+                let Some(child) = q_forward_after_reveal(parent, placed, reveal) else { continue; };
                 let key = qchain_key(child);
                 let Some(&child_qid) = q_index.key_to_id.get(&key) else {
                     skipped_invalid_child += 1;
                     continue;
                 };
-                records.push(QForwardRec {
-                    reveal,
-                    child_qid: child_qid as u32,
-                });
+                records.push(QForwardRec { reveal, child_qid: child_qid as u32 });
             }
             let n = records.len() - before;
             records_by_piece[placed as usize] += n as u64;
@@ -138,13 +131,7 @@ pub fn build_qforward_graph(q_index: &QStateIndex) -> QForwardGraph {
         }
     }
 
-    QForwardGraph {
-        offsets,
-        records,
-        records_by_piece,
-        max_records_per_piece,
-        skipped_invalid_child,
-    }
+    QForwardGraph { offsets, records, records_by_piece, max_records_per_piece, skipped_invalid_child }
 }
 
 pub fn build_qrev_class_graph(q_index: &QStateIndex) -> QRevClassGraph {
@@ -168,10 +155,7 @@ pub fn build_qrev_class_graph(q_index: &QStateIndex) -> QRevClassGraph {
             }
             let bt = bag_tail_key(parent_q);
             let bit = 1u32 << parent_q.avail;
-            by_piece[placed as usize].push(QRevClassRec {
-                bag_tail: bt,
-                avail_mask: bit,
-            });
+            by_piece[placed as usize].push(QRevClassRec { bag_tail: bt, avail_mask: bit });
         }
 
         let mut offs = [0u32; PIECE_COUNT + 1];
@@ -213,18 +197,9 @@ pub fn build_qrev_class_graph(q_index: &QStateIndex) -> QRevClassGraph {
 pub fn print_qforward_graph_stats(q_index: &QStateIndex, g: &QForwardGraph) {
     println!("qforward_graph qstates={}", q_index.states.len());
     println!("qforward_graph records={}", g.records.len());
-    println!(
-        "qforward_graph estimated_record_bytes={}",
-        g.records.len() as u64 * 8
-    );
-    println!(
-        "qforward_graph estimated_offsets_bytes={}",
-        g.offsets.len() as u64 * 8 * 4
-    );
-    println!(
-        "qforward_graph skipped_invalid_child={}",
-        g.skipped_invalid_child
-    );
+    println!("qforward_graph estimated_record_bytes={}", g.records.len() as u64 * 8);
+    println!("qforward_graph estimated_offsets_bytes={}", g.offsets.len() as u64 * 8 * 4);
+    println!("qforward_graph skipped_invalid_child={}", g.skipped_invalid_child);
     for p in 0..PIECE_COUNT {
         println!(
             "qforward_graph piece={} records={} max_records_per_qid={}",
@@ -238,26 +213,13 @@ pub fn print_qforward_graph_stats(q_index: &QStateIndex, g: &QForwardGraph) {
 pub fn print_qrev_class_graph_stats(q_index: &QStateIndex, g: &QRevClassGraph) {
     println!("qrev_graph qstates={}", q_index.states.len());
     println!("qrev_graph records={}", g.records.len());
-    println!(
-        "qrev_graph estimated_record_bytes={}",
-        g.records.len() as u64 * 8
-    );
-    println!(
-        "qrev_graph estimated_offsets_bytes={}",
-        g.offsets.len() as u64 * 8 * 4
-    );
-    println!(
-        "qrev_graph max_parent_avails_per_record={}",
-        g.max_parent_avails_per_record
-    );
+    println!("qrev_graph estimated_record_bytes={}", g.records.len() as u64 * 8);
+    println!("qrev_graph estimated_offsets_bytes={}", g.offsets.len() as u64 * 8 * 4);
+    println!("qrev_graph max_parent_avails_per_record={}", g.max_parent_avails_per_record);
     for p in 0..PIECE_COUNT {
         let recs = g.records_by_piece[p];
         let pop = g.masks_popcount_by_piece[p];
-        let avg = if recs == 0 {
-            0.0
-        } else {
-            pop as f64 / recs as f64
-        };
+        let avg = if recs == 0 { 0.0 } else { pop as f64 / recs as f64 };
         println!(
             "qrev_graph piece={} records={} parent_avail_bits={} avg_mask_popcount={:.6} max_records_per_qid={}",
             piece_char(p as u8),
@@ -288,16 +250,13 @@ fn write_u64<W: Write>(w: &mut W, x: u64) -> Result<()> {
 }
 
 pub fn save_qforward_graph(path: &Path, g: &QForwardGraph) -> Result<()> {
-    let mut w =
-        BufWriter::new(File::create(path).with_context(|| format!("create {}", path.display()))?);
+    let mut w = BufWriter::new(File::create(path).with_context(|| format!("create {}", path.display()))?);
     w.write_all(b"QFWDGR1\0")?;
     write_u32(&mut w, 1)?;
     write_u32(&mut w, g.offsets.len() as u32)?;
     write_u64(&mut w, g.records.len() as u64)?;
     for offs in &g.offsets {
-        for &x in offs {
-            write_u32(&mut w, x)?;
-        }
+        for &x in offs { write_u32(&mut w, x)?; }
     }
     for rec in &g.records {
         write_u32(&mut w, rec.child_qid)?;
@@ -308,16 +267,13 @@ pub fn save_qforward_graph(path: &Path, g: &QForwardGraph) -> Result<()> {
 }
 
 pub fn save_qrev_class_graph(path: &Path, g: &QRevClassGraph) -> Result<()> {
-    let mut w =
-        BufWriter::new(File::create(path).with_context(|| format!("create {}", path.display()))?);
+    let mut w = BufWriter::new(File::create(path).with_context(|| format!("create {}", path.display()))?);
     w.write_all(b"QREVCL1\0")?;
     write_u32(&mut w, 1)?;
     write_u32(&mut w, g.offsets.len() as u32)?;
     write_u64(&mut w, g.records.len() as u64)?;
     for offs in &g.offsets {
-        for &x in offs {
-            write_u32(&mut w, x)?;
-        }
+        for &x in offs { write_u32(&mut w, x)?; }
     }
     for rec in &g.records {
         write_u32(&mut w, rec.bag_tail)?;
@@ -329,9 +285,7 @@ pub fn save_qrev_class_graph(path: &Path, g: &QRevClassGraph) -> Result<()> {
 
 #[inline]
 fn read_u32_at(bytes: &[u8], pos: &mut usize) -> Result<u32> {
-    if *pos + 4 > bytes.len() {
-        bail!("truncated qgraph u32");
-    }
+    if *pos + 4 > bytes.len() { bail!("truncated qgraph u32"); }
     let v = u32::from_le_bytes(bytes[*pos..*pos + 4].try_into().unwrap());
     *pos += 4;
     Ok(v)
@@ -339,9 +293,7 @@ fn read_u32_at(bytes: &[u8], pos: &mut usize) -> Result<u32> {
 
 #[inline]
 fn read_u64_at(bytes: &[u8], pos: &mut usize) -> Result<u64> {
-    if *pos + 8 > bytes.len() {
-        bail!("truncated qgraph u64");
-    }
+    if *pos + 8 > bytes.len() { bail!("truncated qgraph u64"); }
     let v = u64::from_le_bytes(bytes[*pos..*pos + 8].try_into().unwrap());
     *pos += 8;
     Ok(v)
@@ -354,35 +306,24 @@ pub fn load_qrev_class_graph(path: &Path) -> Result<QRevClassGraph> {
     }
     let mut pos = 8usize;
     let version = read_u32_at(&bytes, &mut pos)?;
-    if version != 1 {
-        bail!("unsupported qrevclass version {version}");
-    }
+    if version != 1 { bail!("unsupported qrevclass version {version}"); }
     let qstates = read_u32_at(&bytes, &mut pos)? as usize;
     let record_count = read_u64_at(&bytes, &mut pos)? as usize;
     let expected = 24usize + qstates * (PIECE_COUNT + 1) * 4 + record_count * 8;
     if bytes.len() != expected {
-        bail!(
-            "qrevclass size mismatch: got {}, expected {}",
-            bytes.len(),
-            expected
-        );
+        bail!("qrevclass size mismatch: got {}, expected {}", bytes.len(), expected);
     }
     let mut offsets = Vec::<[u32; PIECE_COUNT + 1]>::with_capacity(qstates);
     for _ in 0..qstates {
         let mut offs = [0u32; PIECE_COUNT + 1];
-        for x in &mut offs {
-            *x = read_u32_at(&bytes, &mut pos)?;
-        }
+        for x in &mut offs { *x = read_u32_at(&bytes, &mut pos)?; }
         offsets.push(offs);
     }
     let mut records = Vec::<QRevClassRec>::with_capacity(record_count);
     for _ in 0..record_count {
         let bag_tail = read_u32_at(&bytes, &mut pos)?;
         let avail_mask = read_u32_at(&bytes, &mut pos)?;
-        records.push(QRevClassRec {
-            bag_tail,
-            avail_mask,
-        });
+        records.push(QRevClassRec { bag_tail, avail_mask });
     }
 
     let mut records_by_piece = [0u64; PIECE_COUNT];
@@ -402,12 +343,5 @@ pub fn load_qrev_class_graph(path: &Path) -> Result<QRevClassGraph> {
             }
         }
     }
-    Ok(QRevClassGraph {
-        offsets,
-        records,
-        records_by_piece,
-        masks_popcount_by_piece,
-        max_records_per_piece,
-        max_parent_avails_per_record,
-    })
+    Ok(QRevClassGraph { offsets, records, records_by_piece, masks_popcount_by_piece, max_records_per_piece, max_parent_avails_per_record })
 }

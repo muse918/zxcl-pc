@@ -145,11 +145,7 @@ pub fn enumerate_states() -> StateIndex {
 
                 let queue6 = encode_queue6(q);
                 for hold in 0u8..7 {
-                    let s = ChainState {
-                        hold,
-                        queue6,
-                        bag_mask,
-                    };
+                    let s = ChainState { hold, queue6, bag_mask };
                     debug_assert!(is_valid_state(s));
                     states.push(s);
                     count_by_popcount[k] += 1;
@@ -166,9 +162,5 @@ pub fn enumerate_states() -> StateIndex {
 
     debug_assert_eq!(states.len(), 1_120_140);
 
-    StateIndex {
-        states,
-        key_to_id,
-        count_by_popcount,
-    }
+    StateIndex { states, key_to_id, count_by_popcount }
 }

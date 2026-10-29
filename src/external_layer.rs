@@ -12,9 +12,7 @@ use crate::graph::{FieldId, PIECE_COUNT};
 use crate::layer_store::{FieldChainLayer, FieldChainWriter};
 use crate::piece::FULL_BAG;
 use crate::rgraph::ReverseGraph;
-use crate::state::{
-    decode_queue6, encode_queue6, is_valid_state, state_key, ChainState, StateIndex,
-};
+use crate::state::{decode_queue6, encode_queue6, is_valid_state, state_key, ChainState, StateIndex};
 
 const DEFAULT_FLUSH_PAIRS: usize = 10_000_000;
 const DEFAULT_MERGE_FANIN: usize = 128;
@@ -38,9 +36,7 @@ fn read_u64_le_from<R: Read>(r: &mut R) -> Result<Option<u64>> {
     while got < 8 {
         let n = r.read(&mut buf[got..])?;
         if n == 0 {
-            if got == 0 {
-                return Ok(None);
-            }
+            if got == 0 { return Ok(None); }
             anyhow::bail!("truncated u64 in run file");
         }
         got += n;
@@ -69,36 +65,20 @@ fn reverse_chain_state(new_chain: ChainState, out: &mut Vec<(u8, ChainState)>) {
     out.clear();
     let new_q = decode_queue6(new_chain.queue6);
     let revealed = new_q[5];
-    let Some(old_bag) = reverse_bag(new_chain.bag_mask, revealed) else {
-        return;
-    };
+    let Some(old_bag) = reverse_bag(new_chain.bag_mask, revealed) else { return; };
 
     for placed in 0u8..PIECE_COUNT as u8 {
         let old_queue6 = prepend_front(placed, new_q);
-        let old = ChainState {
-            hold: new_chain.hold,
-            queue6: old_queue6,
-            bag_mask: old_bag,
-        };
-        if is_valid_state(old) {
-            out.push((placed, old));
-        }
+        let old = ChainState { hold: new_chain.hold, queue6: old_queue6, bag_mask: old_bag };
+        if is_valid_state(old) { out.push((placed, old)); }
     }
 
     let old_front = new_chain.hold;
     let old_queue6 = prepend_front(old_front, new_q);
     for placed in 0u8..PIECE_COUNT as u8 {
-        if placed == old_front {
-            continue;
-        }
-        let old = ChainState {
-            hold: placed,
-            queue6: old_queue6,
-            bag_mask: old_bag,
-        };
-        if is_valid_state(old) {
-            out.push((placed, old));
-        }
+        if placed == old_front { continue; }
+        let old = ChainState { hold: placed, queue6: old_queue6, bag_mask: old_bag };
+        if is_valid_state(old) { out.push((placed, old)); }
     }
 }
 
@@ -110,10 +90,7 @@ pub struct ExternalConfig {
 
 impl Default for ExternalConfig {
     fn default() -> Self {
-        Self {
-            flush_pairs: DEFAULT_FLUSH_PAIRS,
-            merge_fanin: DEFAULT_MERGE_FANIN,
-        }
+        Self { flush_pairs: DEFAULT_FLUSH_PAIRS, merge_fanin: DEFAULT_MERGE_FANIN }
     }
 }
 
@@ -127,14 +104,11 @@ pub struct ExternalRunStats {
 }
 
 fn write_pair_run(path: &Path, pairs: &mut Vec<u64>) -> Result<u64> {
-    if pairs.is_empty() {
-        return Ok(0);
-    }
+    if pairs.is_empty() { return Ok(0); }
     pairs.sort_unstable();
     pairs.dedup();
     let count = pairs.len() as u64;
-    let file =
-        File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+    let file = File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
     let mut w = BufWriter::with_capacity(8 * 1024 * 1024, file);
     w.write_all(RUN_MAGIC)?;
     w.write_all(&count.to_le_bytes())?;
@@ -154,23 +128,15 @@ struct PairRunReader {
 
 impl PairRunReader {
     fn open(path: PathBuf) -> Result<Self> {
-        let file =
-            File::open(&path).with_context(|| format!("failed to open {}", path.display()))?;
+        let file = File::open(&path).with_context(|| format!("failed to open {}", path.display()))?;
         let mut reader = BufReader::with_capacity(8 * 1024 * 1024, file);
         let mut magic = [0u8; 8];
         reader.read_exact(&mut magic)?;
-        if &magic != RUN_MAGIC {
-            anyhow::bail!("unsupported pair run format: {}", path.display());
-        }
+        if &magic != RUN_MAGIC { anyhow::bail!("unsupported pair run format: {}", path.display()); }
         let mut cnt = [0u8; 8];
         reader.read_exact(&mut cnt)?;
         let remaining = u64::from_le_bytes(cnt);
-        let mut out = Self {
-            path,
-            reader,
-            remaining,
-            current: None,
-        };
+        let mut out = Self { path, reader, remaining, current: None };
         out.advance()?;
         Ok(out)
     }
@@ -181,9 +147,7 @@ impl PairRunReader {
             return Ok(());
         }
         self.current = read_u64_le_from(&mut self.reader)?;
-        if self.current.is_none() {
-            anyhow::bail!("truncated run file {}", self.path.display());
-        }
+        if self.current.is_none() { anyhow::bail!("truncated run file {}", self.path.display()); }
         self.remaining -= 1;
         Ok(())
     }
@@ -197,32 +161,23 @@ struct HeapItem {
 
 impl Ord for HeapItem {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.key
-            .cmp(&other.key)
-            .then_with(|| self.reader_idx.cmp(&other.reader_idx))
+        self.key.cmp(&other.key).then_with(|| self.reader_idx.cmp(&other.reader_idx))
     }
 }
 impl PartialOrd for HeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 fn merge_runs_to_run(inputs: &[PathBuf], output: &Path) -> Result<u64> {
     let mut readers = Vec::<PairRunReader>::with_capacity(inputs.len());
-    for p in inputs {
-        readers.push(PairRunReader::open(p.clone())?);
-    }
+    for p in inputs { readers.push(PairRunReader::open(p.clone())?); }
 
     let mut heap = BinaryHeap::<Reverse<HeapItem>>::new();
     for (i, r) in readers.iter().enumerate() {
-        if let Some(key) = r.current {
-            heap.push(Reverse(HeapItem { key, reader_idx: i }));
-        }
+        if let Some(key) = r.current { heap.push(Reverse(HeapItem { key, reader_idx: i })); }
     }
 
-    let file =
-        File::create(output).with_context(|| format!("failed to create {}", output.display()))?;
+    let file = File::create(output).with_context(|| format!("failed to create {}", output.display()))?;
     let mut w = BufWriter::with_capacity(8 * 1024 * 1024, file);
     w.write_all(RUN_MAGIC)?;
     w.write_all(&0u64.to_le_bytes())?; // patched by rewriting file is inconvenient; write temp body then rewrite header below not possible with BufWriter.
@@ -239,10 +194,7 @@ fn merge_runs_to_run(inputs: &[PathBuf], output: &Path) -> Result<u64> {
         let r = &mut readers[item.reader_idx];
         r.advance()?;
         if let Some(next_key) = r.current {
-            heap.push(Reverse(HeapItem {
-                key: next_key,
-                reader_idx: item.reader_idx,
-            }));
+            heap.push(Reverse(HeapItem { key: next_key, reader_idx: item.reader_idx }));
         }
     }
     w.flush()?;
@@ -259,15 +211,11 @@ fn merge_runs_to_run(inputs: &[PathBuf], output: &Path) -> Result<u64> {
 
 fn merge_runs_to_field_chain(inputs: &[PathBuf], output_prefix: &Path) -> Result<u64> {
     let mut readers = Vec::<PairRunReader>::with_capacity(inputs.len());
-    for p in inputs {
-        readers.push(PairRunReader::open(p.clone())?);
-    }
+    for p in inputs { readers.push(PairRunReader::open(p.clone())?); }
 
     let mut heap = BinaryHeap::<Reverse<HeapItem>>::new();
     for (i, r) in readers.iter().enumerate() {
-        if let Some(key) = r.current {
-            heap.push(Reverse(HeapItem { key, reader_idx: i }));
-        }
+        if let Some(key) = r.current { heap.push(Reverse(HeapItem { key, reader_idx: i })); }
     }
 
     let mut writer = FieldChainWriter::create(output_prefix)?;
@@ -284,10 +232,7 @@ fn merge_runs_to_field_chain(inputs: &[PathBuf], output_prefix: &Path) -> Result
         let r = &mut readers[item.reader_idx];
         r.advance()?;
         if let Some(next_key) = r.current {
-            heap.push(Reverse(HeapItem {
-                key: next_key,
-                reader_idx: item.reader_idx,
-            }));
+            heap.push(Reverse(HeapItem { key: next_key, reader_idx: item.reader_idx }));
         }
     }
 
@@ -298,9 +243,7 @@ fn merge_runs_to_field_chain(inputs: &[PathBuf], output_prefix: &Path) -> Result
 
 fn collect_run_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    if !dir.exists() {
-        return Ok(out);
-    }
+    if !dir.exists() { return Ok(out); }
     for ent in fs::read_dir(dir)? {
         let ent = ent?;
         let path = ent.path();
@@ -312,42 +255,25 @@ fn collect_run_files(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-fn merge_all_runs_to_field_chain(
-    work_dir: &Path,
-    output_prefix: &Path,
-    fanin: usize,
-) -> Result<u64> {
+fn merge_all_runs_to_field_chain(work_dir: &Path, output_prefix: &Path, fanin: usize) -> Result<u64> {
     let mut pass_dir = work_dir.join("runs");
     let mut runs = collect_run_files(&pass_dir)?;
-    if runs.is_empty() {
-        anyhow::bail!("no run files found in {}", pass_dir.display());
-    }
+    if runs.is_empty() { anyhow::bail!("no run files found in {}", pass_dir.display()); }
     let fanin = fanin.max(2);
     let mut pass = 0usize;
 
     while runs.len() > fanin {
         let next_dir = work_dir.join(format!("merge_pass_{pass:03}"));
         fs::create_dir_all(&next_dir)?;
-        eprintln!(
-            "merge pass {pass}: {} runs -> {}",
-            runs.len(),
-            next_dir.display()
-        );
+        eprintln!("merge pass {pass}: {} runs -> {}", runs.len(), next_dir.display());
         let mut next_runs = Vec::<PathBuf>::new();
         for (group_idx, group) in runs.chunks(fanin).enumerate() {
             let out = next_dir.join(format!("run_{group_idx:012}.bin"));
             let start = Instant::now();
             let count = merge_runs_to_run(group, &out)?;
-            eprintln!(
-                "  merged group {group_idx} inputs={} unique={} elapsed={:.1}s",
-                group.len(),
-                count,
-                start.elapsed().as_secs_f64()
-            );
+            eprintln!("  merged group {group_idx} inputs={} unique={} elapsed={:.1}s", group.len(), count, start.elapsed().as_secs_f64());
             next_runs.push(out);
-            for p in group {
-                let _ = fs::remove_file(p);
-            }
+            for p in group { let _ = fs::remove_file(p); }
         }
         // Try removing previous pass directory.
         let _ = fs::remove_dir_all(&pass_dir);
@@ -356,33 +282,16 @@ fn merge_all_runs_to_field_chain(
         pass += 1;
     }
 
-    eprintln!(
-        "final merge: {} runs -> {}",
-        runs.len(),
-        output_prefix.display()
-    );
+    eprintln!("final merge: {} runs -> {}", runs.len(), output_prefix.display());
     let start = Instant::now();
     let count = merge_runs_to_field_chain(&runs, output_prefix)?;
-    eprintln!(
-        "final merge unique={} elapsed={:.1}s",
-        count,
-        start.elapsed().as_secs_f64()
-    );
-    for p in &runs {
-        let _ = fs::remove_file(p);
-    }
+    eprintln!("final merge unique={} elapsed={:.1}s", count, start.elapsed().as_secs_f64());
+    for p in &runs { let _ = fs::remove_file(p); }
     Ok(count)
 }
 
-fn flush_local_run(
-    work_dir: &Path,
-    run_counter: &AtomicU64,
-    run_unique: &AtomicU64,
-    pairs: &mut Vec<u64>,
-) -> Result<()> {
-    if pairs.is_empty() {
-        return Ok(());
-    }
+fn flush_local_run(work_dir: &Path, run_counter: &AtomicU64, run_unique: &AtomicU64, pairs: &mut Vec<u64>) -> Result<()> {
+    if pairs.is_empty() { return Ok(()); }
     let runs_dir = work_dir.join("runs");
     fs::create_dir_all(&runs_dir)?;
     let run_id = run_counter.fetch_add(1, AtomicOrdering::Relaxed);
@@ -408,16 +317,11 @@ pub fn sample_external(
     'outer: for (bi, meta) in input.metas.iter().enumerate() {
         let chains = input.read_block_chains(bi);
         for cid in chains {
-            if processed >= sample_states {
-                break 'outer;
-            }
+            if processed >= sample_states { break 'outer; }
             let next_chain = state_index.states[cid as usize];
             reverse_chain_state(next_chain, &mut rev_buf);
             for &(placed, old_chain) in &rev_buf {
-                let old_cid = *state_index
-                    .key_to_id
-                    .get(&state_key(old_chain))
-                    .expect("old chain missing") as u32;
+                let old_cid = *state_index.key_to_id.get(&state_key(old_chain)).expect("old chain missing") as u32;
                 for &old_field in rgraph.edges(meta.field_id, placed) {
                     pairs.push(pair_key(old_field, old_cid));
                     raw += 1;
@@ -430,16 +334,8 @@ pub fn sample_external(
     pairs.sort_unstable();
     pairs.dedup();
     let unique = pairs.len() as u64;
-    let ratio = if raw == 0 {
-        0.0
-    } else {
-        unique as f64 / raw as f64
-    };
-    let raw_per_input = if processed == 0 {
-        0.0
-    } else {
-        raw as f64 / processed as f64
-    };
+    let ratio = if raw == 0 { 0.0 } else { unique as f64 / raw as f64 };
+    let raw_per_input = if processed == 0 { 0.0 } else { raw as f64 / processed as f64 };
     let est_raw = raw_per_input * input.total_states as f64;
     let est_unique = est_raw * ratio;
 
@@ -450,16 +346,8 @@ pub fn sample_external(
     println!("sample raw_per_input={raw_per_input:.3}");
     println!("estimated_full_raw_pairs={:.0}", est_raw);
     println!("estimated_full_unique_pairs={:.0}", est_unique);
-    println!(
-        "estimated_full_u24_membership_bytes={:.0} ({:.3} GiB)",
-        est_unique * 3.0,
-        est_unique * 3.0 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "estimated_full_u24_plus_fp16_bytes={:.0} ({:.3} GiB)",
-        est_unique * 5.0,
-        est_unique * 5.0 / 1024.0 / 1024.0 / 1024.0
-    );
+    println!("estimated_full_u24_membership_bytes={:.0} ({:.3} GiB)", est_unique * 3.0, est_unique * 3.0 / 1024.0 / 1024.0 / 1024.0);
+    println!("estimated_full_u24_plus_fp16_bytes={:.0} ({:.3} GiB)", est_unique * 5.0, est_unique * 5.0 / 1024.0 / 1024.0 / 1024.0);
     eprintln!("sample elapsed={:.3}s", start.elapsed().as_secs_f64());
     Ok(())
 }
@@ -489,45 +377,33 @@ pub fn external_step(
     let block_chunk = 8usize;
     eprintln!(
         "external generation blocks={} input_states={} threads={} flush_pairs={} block_chunk={}",
-        input.metas.len(),
-        input.total_states,
-        rayon::current_num_threads(),
-        config.flush_pairs,
-        block_chunk
+        input.metas.len(), input.total_states, rayon::current_num_threads(), config.flush_pairs, block_chunk
     );
 
-    input
-        .metas
-        .par_chunks(block_chunk)
-        .try_for_each(|metas| -> Result<()> {
-            let mut local = Vec::<u64>::with_capacity(config.flush_pairs.min(1_000_000));
-            let mut rev_buf = Vec::<(u8, ChainState)>::new();
+    input.metas.par_chunks(block_chunk).try_for_each(|metas| -> Result<()> {
+        let mut local = Vec::<u64>::with_capacity(config.flush_pairs.min(1_000_000));
+        let mut rev_buf = Vec::<(u8, ChainState)>::new();
 
-            for meta in metas {
-                let start_elem = meta.chain_offset;
-                for j in 0..meta.count as u64 {
-                    let cid =
-                        crate::layer_store::read_u24_le_at(&input.chains_bytes, start_elem + j);
-                    let next_chain = state_index.states[cid as usize];
-                    reverse_chain_state(next_chain, &mut rev_buf);
-                    for &(placed, old_chain) in &rev_buf {
-                        let old_cid = *state_index
-                            .key_to_id
-                            .get(&state_key(old_chain))
-                            .expect("old chain missing")
-                            as u32;
-                        for &old_field in rgraph.edges(meta.field_id, placed) {
-                            local.push(pair_key(old_field, old_cid));
-                            raw.fetch_add(1, AtomicOrdering::Relaxed);
-                            if local.len() >= config.flush_pairs {
-                                flush_local_run(work_dir, &run_counter, &run_unique, &mut local)?;
-                            }
+        for meta in metas {
+            let start_elem = meta.chain_offset;
+            for j in 0..meta.count as u64 {
+                let cid = crate::layer_store::read_u24_le_at(&input.chains_bytes, start_elem + j);
+                let next_chain = state_index.states[cid as usize];
+                reverse_chain_state(next_chain, &mut rev_buf);
+                for &(placed, old_chain) in &rev_buf {
+                    let old_cid = *state_index.key_to_id.get(&state_key(old_chain)).expect("old chain missing") as u32;
+                    for &old_field in rgraph.edges(meta.field_id, placed) {
+                        local.push(pair_key(old_field, old_cid));
+                        raw.fetch_add(1, AtomicOrdering::Relaxed);
+                        if local.len() >= config.flush_pairs {
+                            flush_local_run(work_dir, &run_counter, &run_unique, &mut local)?;
                         }
                     }
                 }
-                let d = done_blocks.fetch_add(1, AtomicOrdering::Relaxed) + 1;
-                if d % 100 == 0 || d == input.metas.len() as u64 {
-                    eprintln!(
+            }
+            let d = done_blocks.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+            if d % 100 == 0 || d == input.metas.len() as u64 {
+                eprintln!(
                     "  external gen blocks_done={}/{} raw={} run_unique={} runs={} elapsed={:.1}s",
                     d,
                     input.metas.len(),
@@ -536,49 +412,30 @@ pub fn external_step(
                     run_counter.load(AtomicOrdering::Relaxed),
                     start.elapsed().as_secs_f64()
                 );
-                }
             }
-            flush_local_run(work_dir, &run_counter, &run_unique, &mut local)?;
-            Ok(())
-        })?;
+        }
+        flush_local_run(work_dir, &run_counter, &run_unique, &mut local)?;
+        Ok(())
+    })?;
 
     let raw_pairs = raw.load(AtomicOrdering::Relaxed);
     let run_unique_pairs = run_unique.load(AtomicOrdering::Relaxed);
     let run_files = run_counter.load(AtomicOrdering::Relaxed);
     eprintln!(
         "external run generation done raw={} run_unique={} runs={} elapsed={:.1}s",
-        raw_pairs,
-        run_unique_pairs,
-        run_files,
-        start.elapsed().as_secs_f64()
+        raw_pairs, run_unique_pairs, run_files, start.elapsed().as_secs_f64()
     );
 
     let merge_start = Instant::now();
     let final_unique = merge_all_runs_to_field_chain(work_dir, output_prefix, config.merge_fanin)?;
-    eprintln!(
-        "external final merge done final_unique={} elapsed={:.1}s",
-        final_unique,
-        merge_start.elapsed().as_secs_f64()
-    );
+    eprintln!("external final merge done final_unique={} elapsed={:.1}s", final_unique, merge_start.elapsed().as_secs_f64());
 
     let membership_bytes = final_unique * 3;
     let fp16_bytes = final_unique * 2;
     println!("external output_states={final_unique}");
-    println!(
-        "external output_u24_membership_bytes={} ({:.3} GiB)",
-        membership_bytes,
-        membership_bytes as f64 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "external future_fp16_values_bytes={} ({:.3} GiB)",
-        fp16_bytes,
-        fp16_bytes as f64 / 1024.0 / 1024.0 / 1024.0
-    );
-    println!(
-        "external future_u24_plus_fp16_bytes={} ({:.3} GiB)",
-        membership_bytes + fp16_bytes,
-        (membership_bytes + fp16_bytes) as f64 / 1024.0 / 1024.0 / 1024.0
-    );
+    println!("external output_u24_membership_bytes={} ({:.3} GiB)", membership_bytes, membership_bytes as f64 / 1024.0 / 1024.0 / 1024.0);
+    println!("external future_fp16_values_bytes={} ({:.3} GiB)", fp16_bytes, fp16_bytes as f64 / 1024.0 / 1024.0 / 1024.0);
+    println!("external future_u24_plus_fp16_bytes={} ({:.3} GiB)", membership_bytes + fp16_bytes, (membership_bytes + fp16_bytes) as f64 / 1024.0 / 1024.0 / 1024.0);
 
     Ok(ExternalRunStats {
         input_states: input.total_states,

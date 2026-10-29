@@ -28,10 +28,10 @@ environment variables.
 
 ## Quick start
 
-From this component directory:
-
 ```bash
-cargo test --locked
+git clone https://github.com/muse918/zxcl-pc.git
+cd zxcl-pc
+cargo test --workspace
 ./scripts/download_graph.sh
 ```
 
@@ -109,8 +109,9 @@ Some useful numbers from my run:
 - about 86.3 billion states across layers 0-9
 - mean layer-0 `V*` of about 4,338.53 PCs
 
-These are useful for spotting a broken or incomplete run, but they are not hard-coded
-into the solver.
+These are reference results for spotting an incomplete run. The current graph reader
+still expects the reference field count and three-byte target IDs; loading a different
+field catalog needs a separate compatibility change.
 
 ## License
 
