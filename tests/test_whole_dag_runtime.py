@@ -56,6 +56,17 @@ class WholeDagRuntimeTests(unittest.TestCase):
             b''.join(qid.to_bytes(3, 'little') for qid in qids))
         (self.policy / f'layer{layer}.policy.u16.bin').write_bytes(b'\xff\xff' * len(qids))
 
+    def write_multifield_none_boundary(self):
+        prefix = self.pruned / 'layer0q_pruned'
+        prefix.with_suffix('.field_index.bin').write_bytes(
+            b'FCHNIDX1' + struct.pack('<IIQ', 1, 2, 3)
+            + struct.pack('<IIQ', 0, 2, 0) + struct.pack('<IIQ', 1, 1, 2))
+        prefix.with_suffix('.chains.u24.bin').write_bytes(
+            (0).to_bytes(3, 'little') + (1).to_bytes(3, 'little') + (0).to_bytes(3, 'little'))
+        (self.policy / 'layer0.policy.u16.bin').write_bytes(b'\xff\xff' * 3)
+        self.accepted = struct.pack('<f', 123.0) * 3
+        self.value.write_bytes(self.accepted)
+
     def run_solver(self, command='apply', *, initial='zero', iterations=0, gamma='1',
                    graph=None, output=None, scratch=None, compare=None, overrides=None):
         env = dict(self.env)
@@ -182,6 +193,144 @@ class WholeDagRuntimeTests(unittest.TestCase):
         self.assertEqual(float(done.split('|T(v)-v|_inf=', 1)[1].split()[0]), 0.0)
         self.assertEqual(self.value.read_bytes(), struct.pack('<f', 0.0) * 2)
         self.assert_no_numeric_layer_files(scratch)
+
+    def test_raw_warm_start_accepts_absolute_residual_for_every_stored_root_without_dag(self):
+        self.write_multifield_none_boundary()
+        warm = struct.pack('<fff', 1 / 2048, -1 / 2048, 3 / 4096)
+        for same_path in [False, True]:
+            with self.subTest(initial_equals_output=same_path):
+                self.value.write_bytes(warm if same_path else self.accepted)
+                initial = self.value if same_path else self.path / 'raw-accepted-warm.f32.bin'
+                initial.write_bytes(warm)
+                scratch = self.path / f'raw-accepted-{same_path}'
+                result = self.run_solver('gmres', initial=initial, iterations=1_000_000,
+                                         scratch=scratch, overrides={
+                                             'PI_GMRES_RAW_WARM_START': '1',
+                                             # Any compiled L9 build would exceed this cap.
+                                             'PI_LOOP1_L9_MAX_MAPPING_MIB': '0'})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('raw-warm-start roots=3 gamma=1 compiled_l9=0 dag=0 full_policy=1',
+                              result.stderr)
+                done = next(line for line in result.stderr.splitlines()
+                            if line.startswith('pi-policy-eval-gmres done '))
+                self.assertIn('status=ACCEPTED_WARM_START', done)
+                self.assertIn('krylov_iters=0', done)
+                self.assertIn('relative_residual=not_computed', done)
+                self.assertIn('dag_built=0', done)
+                residual = float(done.split('|T(v)-v|_inf=', 1)[1].split()[0])
+                self.assertGreater(residual, 0.0)
+                self.assertAlmostEqual(residual, 3 / 4096, delta=1e-9)
+                self.assertLessEqual(residual, 0.001)
+                self.assertNotIn('status=CONVERGED', result.stderr)
+                self.assertNotIn('whole-dag ready roots=', result.stderr)
+                self.assertNotIn('whole-dag verified roots=', result.stderr)
+                self.assertNotIn('compiled-l9 states=', result.stderr)
+                self.assertNotIn('pi-policy-eval-gmres iter=', result.stderr)
+                self.assertEqual(self.value.read_bytes(), warm)
+                self.assertEqual(initial.read_bytes(), warm)
+                self.assertEqual(self.value.with_suffix('.applied.f32.bin').read_bytes(),
+                                 struct.pack('<f', 0.0) * 3)
+                self.assert_no_numeric_layer_files(scratch)
+
+    def test_raw_warm_start_rejection_falls_back_to_krylov_and_independent_final_gate(self):
+        self.write_multifield_none_boundary()
+        initial = self.path / 'raw-rejected-warm.f32.bin'
+        # Only the additional non-reset root has a residual. Checking just the
+        # reset prefix would incorrectly accept this warmstart.
+        initial.write_bytes(struct.pack('<fff', 0.0, 0.0, -1.0))
+        for iterations in [0, 1]:
+            with self.subTest(iterations=iterations):
+                self.value.write_bytes(self.accepted)
+                scratch = self.path / f'raw-fallback-{iterations}'
+                result = self.run_solver('gmres', initial=initial, iterations=iterations,
+                                         scratch=scratch, overrides={
+                                             'PI_GMRES_RAW_WARM_START': '1',
+                                             'PI_GMRES_AITKEN': '0',
+                                             'PI_GMRES_BASIS_MAX_GIB': '1'})
+                self.assertIn('raw-warm-start rejected', result.stderr)
+                self.assertIn('fallback=whole-dag', result.stderr)
+                self.assertIn('whole-dag ready roots=3', result.stderr)
+                self.assertLess(result.stderr.index('raw-warm-start rejected'),
+                                result.stderr.index('whole-dag ready roots=3'))
+                self.assertEqual(result.stderr.count('whole-dag validation complete'), 1)
+                self.assertIn('whole-dag numeric-reference roots=3 gamma=1 compiled_l9=0 dag=0',
+                              result.stderr)
+                self.assertIn('whole-dag verified roots=3 finite=1 bitwise_match=1', result.stderr)
+                self.assertNotIn('status=ACCEPTED_WARM_START', result.stderr)
+                if iterations == 0:
+                    self.assert_not_published(result)
+                    self.assertIn('NOT ACCEPTED', result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('pi-policy-eval-gmres iter=1 ', result.stderr)
+                    done = next(line for line in result.stderr.splitlines()
+                                if line.startswith('pi-policy-eval-gmres done '))
+                    self.assertIn('status=CONVERGED', done)
+                    self.assertIn('krylov_iters=1', done)
+                    self.assertEqual(float(done.split('|T(v)-v|_inf=', 1)[1].split()[0]), 0.0)
+                    self.assertEqual(self.value.read_bytes(), struct.pack('<f', 0.0) * 3)
+                self.assert_no_numeric_layer_files(scratch)
+
+    def test_raw_warm_start_invalid_configuration_rejects_before_io(self):
+        cases = [
+            ({'overrides': {'PI_GMRES_RAW_WARM_START': 'invalid'}},
+             'PI_GMRES_RAW_WARM_START'),
+            ({'overrides': {'PI_GMRES_RAW_WARM_START': '1', 'PI_LOOP1_WHOLE_DAG': '0'}},
+             'PI_LOOP1_WHOLE_DAG'),
+            ({'gamma': '0.5', 'overrides': {'PI_GMRES_RAW_WARM_START': '1'}}, 'gamma'),
+        ]
+        for options, diagnostic in cases:
+            with self.subTest(options=options):
+                result = self.run_solver('gmres', graph=self.path / 'must-not-load-graph.bin',
+                                         **options)
+                self.assert_not_published(result)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertNotIn('loading graph', result.stderr)
+                self.assertFalse((self.path / 'scratch').exists())
+
+    def test_raw_warm_start_rejects_nonfinite_input_and_unreachable_corrupt_policy(self):
+        initial = self.path / 'raw-invalid-warm.f32.bin'
+        for value in [float('nan'), float('inf')]:
+            with self.subTest(nonfinite=value):
+                initial.write_bytes(struct.pack('<ff', value, 0.0))
+                result = self.run_solver('gmres', initial=initial,
+                                         overrides={'PI_GMRES_RAW_WARM_START': '1'})
+                self.assert_not_published(result)
+                self.assertIn('nonfinite', result.stderr)
+                self.assertNotIn('whole-dag ready roots=', result.stderr)
+                self.assertNotIn('status=ACCEPTED_WARM_START', result.stderr)
+        # The zero initial vector would pass the absolute residual gate, but
+        # an unreachable policy still has to be validated before acceptance.
+        policy = self.policy / 'layer9.policy.u16.bin'
+        malformed = struct.pack('<H', 0x0700)
+        policy.write_bytes(malformed)
+        result = self.run_solver('gmres', overrides={'PI_GMRES_RAW_WARM_START': '1'})
+        self.assert_not_published(result)
+        self.assertIn('invalid policy', result.stderr)
+        self.assertNotIn('whole-dag ready roots=', result.stderr)
+        self.assertNotIn('status=ACCEPTED_WARM_START', result.stderr)
+        self.assertEqual(policy.read_bytes(), malformed)
+
+    def test_raw_warm_start_alias_guards_preserve_accepted_output_and_policy(self):
+        scratch = self.path / 'scratch'
+        scratch.mkdir()
+        policy = self.policy / 'layer9.policy.u16.bin'
+        cases = [(self.value.with_suffix('.applied.f32.bin'), policy),
+                 (scratch / 'layer9.values.f32.bin', self.value)]
+        for destination, source in cases:
+            with self.subTest(destination=destination.name):
+                original = source.read_bytes()
+                os.link(source, destination)
+                try:
+                    result = self.run_solver('gmres', scratch=scratch,
+                                             overrides={'PI_GMRES_RAW_WARM_START': '1'})
+                    self.assert_not_published(result)
+                    self.assertIn('alias', result.stderr)
+                    self.assertNotIn('loading graph', result.stderr)
+                    self.assertEqual(source.read_bytes(), original)
+                    self.assertEqual(destination.read_bytes(), original)
+                finally:
+                    destination.unlink()
 
     def test_final_true_residual_rejection_preserves_accepted_output(self):
         initial = self.path / 'nonconverged.f32.bin'

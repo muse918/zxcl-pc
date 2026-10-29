@@ -57,9 +57,12 @@ it cannot establish a valid live-process measurement.
 Termination uses the supported `systemctl --kill-who=all` option, with direct
 cgroup-process killing as a fallback, and verifies that the service has no live
 processes before reporting confirmed cleanup. Unit and live smoke checks of
-these corrections are recorded below. A successful complete-loop run with its
-own resource evidence is still required. The user-confirmed RAM, CPU,
-output/scratch and unlimited-time constraints remain unchanged.
+these corrections are recorded below. The historical `whole-003` probe completed
+the full-boundary operator checks and its own resource record; see its
+[final evidence](../work/limited-loop1/whole-003/final-evidence.json).
+The later `whole-gmres-001` production fixed-policy solve remains pending.
+The user-confirmed RAM, CPU, output/scratch and unlimited-time constraints
+remain unchanged.
 
 All outputs must be directed into the fresh `--output-dir` or an explicitly
 declared `--write-root`. The runner includes logs, temporary files and default
@@ -79,9 +82,12 @@ all intermediate layers onto disk. The default-off whole-operator route now has
 a successful production release build and CLI fixture coverage, using bounded
 memoization and shared ordered expressions. Its options, command and original
 numeric acceptance check are documented in
-[LOOP1_COMPILED.md](LOOP1_COMPILED.md). Complete production-boundary correctness
-and full-application cost evidence remain necessary before a whole-loop speedup
-claim.
+[LOOP1_COMPILED.md](LOOP1_COMPILED.md). The historical `whole-003` probe completed
+full-boundary correctness and application-cost checks against a bounded numeric
+reference, as recorded in its
+[final evidence](../work/limited-loop1/whole-003/final-evidence.json).
+Those checks do not establish production GMRES convergence or runtime;
+`whole-gmres-001` remains pending.
 
 ## Unused 224 GiB capacity-planning profile
 

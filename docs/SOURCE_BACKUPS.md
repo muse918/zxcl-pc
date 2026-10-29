@@ -39,7 +39,7 @@ The timer runs every 15 minutes and catches up after a missed scheduled run.
 The installed tool and existing archives remain on the home disk if `/mnt` is
 formatted. A missing source then produces a failed service without replacing
 the last snapshot. The templates limit the small backup job to 256 MiB RAM,
-one CPU's affinity and a three-minute runtime.
+one CPU's affinity and a three-minute timeout for the oneshot command.
 
 To inspect the current snapshot, read
 `/home/muse918/pcfinder-source-backups/zxcl-pc/LATEST.json`. Verify the stored

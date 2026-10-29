@@ -15,7 +15,7 @@ use crate::graph::FieldGraph;
 use crate::layer_store::FieldChainLayer;
 use crate::loop1_prepared::SourceBindings;
 use crate::loop1_sparse::dag::{WholeDagLimits, WholeFixedPlan};
-use crate::loop1_sparse::{SparseLimits, SparsePolicy};
+use crate::loop1_sparse::{SparseLimits, SparsePolicy, SparseStats};
 use crate::loop1_stream::CompiledL9;
 #[cfg(target_os = "linux")]
 use crate::loop1_stream::InputMutationWatch;
@@ -42,6 +42,25 @@ fn setting(name: &str, default: u64) -> Result<u64> {
         Err(std::env::VarError::NotPresent) => Ok(default),
         Err(error) => Err(error).with_context(|| format!("invalid {name}")),
     }
+}
+
+/// This is an acceptance test of the supplied value, before any DAG is built.
+/// Keep it explicit: a rejected preflight adds one raw application to the solve.
+pub(crate) fn raw_warm_start_enabled(whole_enabled: bool) -> Result<bool> {
+    let enabled = match std::env::var("PI_GMRES_RAW_WARM_START") {
+        Err(std::env::VarError::NotPresent) => false,
+        Err(error) => return Err(error).context("invalid PI_GMRES_RAW_WARM_START"),
+        Ok(value) => match value.to_ascii_lowercase().as_str() {
+            "0" | "false" | "no" => false,
+            "1" | "true" | "yes" => true,
+            _ => anyhow::bail!("PI_GMRES_RAW_WARM_START must be 0/1, false/true or no/yes"),
+        },
+    };
+    ensure!(
+        !enabled || whole_enabled,
+        "PI_GMRES_RAW_WARM_START requires PI_LOOP1_WHOLE_DAG=1 and gamma=1"
+    );
+    Ok(enabled)
 }
 
 #[derive(Clone, Copy)]
@@ -232,6 +251,104 @@ pub(crate) fn same_finite_bits(expected: &[f32], actual: &[f32]) -> Result<()> {
     Ok(())
 }
 
+pub(crate) struct RawBoundaryTimings {
+    pub(crate) dense_reset_seconds: f64,
+    pub(crate) terminal_table_seconds: f64,
+    pub(crate) policy_apply_wall_seconds: f64,
+    pub(crate) numeric_reference_wall_seconds: f64,
+}
+
+pub(crate) struct RawBoundaryOutput {
+    pub(crate) values: Vec<f32>,
+    pub(crate) stats: SparseStats,
+    pub(crate) timings: RawBoundaryTimings,
+}
+
+impl RawBoundaryOutput {
+    pub(crate) fn log_timing(&self, prefix: &str) {
+        let times = &self.timings;
+        eprintln!("{prefix} timing roots={} dense_reset_seconds={:.9} terminal_table_seconds={:.9} policy_apply_wall_seconds={:.9} policy_apply_reported_seconds={:.9} numeric_reference_wall_seconds={:.9} numeric_wall_scope=dense_reset_through_policy_return excludes_DAG_bit_gate_final_guard=1 source_retire_seconds_is_worker_sum=1 stats={:?}",
+            self.values.len(), times.dense_reset_seconds, times.terminal_table_seconds,
+            times.policy_apply_wall_seconds, self.stats.elapsed_seconds,
+            times.numeric_reference_wall_seconds, self.stats);
+    }
+}
+
+/// The authoritative numerical path shared by final DAG verification and the
+/// optional warm-start acceptance test. No compiled L9 or expression DAG is
+/// consulted, and every root follows the original qforward reduction order.
+pub(crate) fn raw_boundary_apply(
+    policy: &SparsePolicy<'_>,
+    qfwd: &QForwardGraph,
+    reset_qids: &[u32],
+    guard: &InputGuard,
+    values: &[f32],
+    linear: bool,
+    limits: SparseLimits,
+) -> Result<RawBoundaryOutput> {
+    guard.check()?;
+    policy.check_inputs_unchanged()?;
+    ensure!(
+        policy.fully_validated(),
+        "raw boundary evaluation requires full stored-policy validation"
+    );
+    ensure!(
+        values.len() as u64 == policy.root_count(),
+        "raw boundary input length mismatch"
+    );
+    ensure!(
+        !reset_qids.is_empty() && reset_qids.len() <= values.len(),
+        "raw boundary reset length mismatch"
+    );
+    ensure!(
+        values.iter().all(|value| value.is_finite()),
+        "nonfinite raw boundary input"
+    );
+    let mut previous = None;
+    for &qid in reset_qids {
+        ensure!(
+            (qid as usize) < qfwd.offsets.len() && previous.is_none_or(|old| old < qid),
+            "raw boundary reset qids must be sorted, unique and in-domain"
+        );
+        previous = Some(qid);
+    }
+    let numeric_start = Instant::now();
+    let dense_start = Instant::now();
+    let mut reset = vec![0.0; qfwd.offsets.len()];
+    for (&qid, &value) in reset_qids.iter().zip(values) {
+        reset[qid as usize] = value;
+    }
+    let dense_reset_seconds = dense_start.elapsed().as_secs_f64();
+    let terminal_start = Instant::now();
+    let table =
+        crate::build_terminal_reset_avg_table_opt(qfwd, &reset, 1.0, qfwd.offsets.len(), !linear);
+    let terminal_table_seconds = terminal_start.elapsed().as_secs_f64();
+    let policy_start = Instant::now();
+    let reference = policy.apply(&table, 1.0, None, limits)?;
+    let policy_apply_wall_seconds = policy_start.elapsed().as_secs_f64();
+    let numeric_reference_wall_seconds = numeric_start.elapsed().as_secs_f64();
+    ensure!(
+        reference.values.len() == values.len(),
+        "raw boundary output length mismatch"
+    );
+    ensure!(
+        reference.values.iter().all(|value| value.is_finite()),
+        "nonfinite raw boundary output"
+    );
+    guard.check()?;
+    policy.check_inputs_unchanged()?;
+    Ok(RawBoundaryOutput {
+        values: reference.values,
+        stats: reference.stats,
+        timings: RawBoundaryTimings {
+            dense_reset_seconds,
+            terminal_table_seconds,
+            policy_apply_wall_seconds,
+            numeric_reference_wall_seconds,
+        },
+    })
+}
+
 pub(crate) struct FullBoundaryDag<'a, 's, 'p> {
     plan: &'a WholeFixedPlan<'s, 'p>,
     policy: &'s SparsePolicy<'p>,
@@ -333,31 +450,20 @@ impl<'a, 's, 'p> FullBoundaryDag<'a, 's, 'p> {
         let dag_start = Instant::now();
         let dag_values = self.apply(values, linear)?;
         let dag_seconds = dag_start.elapsed().as_secs_f64();
-        let numeric_start = Instant::now();
-        let dense_start = Instant::now();
-        let reset = self.dense_reset(values)?;
-        let dense_seconds = dense_start.elapsed().as_secs_f64();
-        // Use the original terminal arithmetic, not TerminalPlan or a compiled
-        // L9 source, so the final gate is independent of expression compilation.
-        let terminal_start = Instant::now();
-        let table = crate::build_terminal_reset_avg_table_opt(
-            self.qfwd,
-            &reset,
-            1.0,
-            self.qfwd.offsets.len(),
-            !linear,
-        );
-        let terminal_seconds = terminal_start.elapsed().as_secs_f64();
         eprintln!(
             "whole-dag numeric-reference roots={} gamma=1 compiled_l9=0 dag=0",
             self.plan.root_count()
         );
-        let policy_start = Instant::now();
-        let reference = self.policy.apply(&table, 1.0, None, self.reference)?;
-        let policy_wall_seconds = policy_start.elapsed().as_secs_f64();
-        let numeric_wall_seconds = numeric_start.elapsed().as_secs_f64();
-        eprintln!("whole-dag numeric-reference timing roots={} dense_reset_seconds={dense_seconds:.9} terminal_table_seconds={terminal_seconds:.9} policy_apply_wall_seconds={policy_wall_seconds:.9} policy_apply_reported_seconds={:.9} numeric_reference_wall_seconds={numeric_wall_seconds:.9} numeric_wall_scope=dense_reset_through_policy_return_includes_status_log excludes_DAG_bit_gate_final_guard=1 source_retire_seconds_is_worker_sum=1 stats={:?}",
-            reference.values.len(), reference.stats.elapsed_seconds, reference.stats);
+        let reference = raw_boundary_apply(
+            self.policy,
+            self.qfwd,
+            self.reset_qids,
+            self.guard,
+            values,
+            linear,
+            self.reference,
+        )?;
+        reference.log_timing("whole-dag numeric-reference");
         let bit_start = Instant::now();
         same_finite_bits(&dag_values, &reference.values)?;
         let bit_seconds = bit_start.elapsed().as_secs_f64();
@@ -373,3 +479,7 @@ impl<'a, 's, 'p> FullBoundaryDag<'a, 's, 'p> {
 #[cfg(test)]
 #[path = "loop1_whole_operator_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "loop1_raw_warm_start_tests.rs"]
+mod raw_warm_start_tests;

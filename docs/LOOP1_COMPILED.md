@@ -791,7 +791,7 @@ apply to the binaries and settings captured for their runs.
 
 The final independent [completion audit](../work/limited-loop1/whole-003/completion-audit.json)
 passed all 21 checks for the complete-loop1 application-cost goal. It verified
-the frozen binary and source archive, unchanged current Rust/Cargo sources,
+the frozen binary and source archive, Rust/Cargo sources unchanged at that audit time,
 all 32 input identities, both full-root bit comparisons, timing arithmetic and
 the finite published output. The [cleanup audit](../work/limited-loop1/whole-003/cleanup-audit.json)
 also confirmed all four current/earlier stopped experiment units inactive, their

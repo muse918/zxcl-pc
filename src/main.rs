@@ -7921,14 +7921,19 @@ fn gmres_accept_and_publish(path: &Path, values: &[f32], applied: &[f32], tolera
     gmres_accept_and_publish_checked(path, values, applied, tolerance, || Ok(()))
 }
 
-fn gmres_accept_and_publish_checked(path: &Path, values: &[f32], applied: &[f32], tolerance: f64, check: impl FnOnce() -> Result<()>) -> Result<f64> {
-    anyhow::ensure!(tolerance.is_finite() && tolerance >= 0.0, "invalid policy residual tolerance");
+fn gmres_bellman_inf(values: &[f32], applied: &[f32]) -> Result<f64> {
     anyhow::ensure!(values.len() == applied.len() && !values.is_empty(), "policy residual length mismatch");
     let mut residual = 0.0f64;
     for (&value, &next) in values.iter().zip(applied) {
         anyhow::ensure!(value.is_finite() && next.is_finite(), "nonfinite policy value or residual");
         residual = residual.max((next as f64 - value as f64).abs());
     }
+    Ok(residual)
+}
+
+fn gmres_accept_and_publish_checked(path: &Path, values: &[f32], applied: &[f32], tolerance: f64, check: impl FnOnce() -> Result<()>) -> Result<f64> {
+    anyhow::ensure!(tolerance.is_finite() && tolerance >= 0.0, "invalid policy residual tolerance");
+    let residual = gmres_bellman_inf(values, applied)?;
     anyhow::ensure!(residual <= tolerance,
         "pi-policy-eval-gmres NOT ACCEPTED: final |T(v)-v|_inf={residual:.6e} > accept_tol={tolerance:.1e}; output was not published");
     publish_finite_f32_atomic_checked(path, values, check)?;
@@ -7971,6 +7976,7 @@ fn run_pi_policy_eval_gmres(args: &[String]) -> Result<()> {
     if !(0.0..=1.0).contains(&gamma) { anyhow::bail!("gamma must be in [0,1], got {}", gamma); }
     let (compiled_l9_enabled, compiled_l8_enabled, action_cache_bytes) = loop1_operator_settings(gamma)?;
     let whole_settings = loop1_whole_operator::Settings::from_env(gamma, compiled_l8_enabled, action_cache_bytes)?;
+    let raw_warm_start = loop1_whole_operator::raw_warm_start_enabled(whole_settings.is_some())?;
     let compiled_l9_enabled = compiled_l9_enabled || whole_settings.is_some_and(|settings| settings.l9_tail);
     anyhow::ensure!(rel_tol.is_finite() && rel_tol >= 0.0, "rel_tol must be finite and nonnegative");
     let accept_tol: f64 = match env::var("PI_ACCEPT_BELLMAN_INF") {
@@ -8025,6 +8031,54 @@ fn run_pi_policy_eval_gmres(args: &[String]) -> Result<()> {
         Some(action_avg_cache::ValidatedPlacements::build(&q_index, &qfwd,
             pre_reveal.as_ref().expect("action cache pre-reveal index"))?)
     } else { None };
+    // The raw test precedes all compiled-tail and DAG construction. A rejected
+    // preflight keeps its fully validated policy and the exact loaded x0 for
+    // the normal solver, while its temporary numeric caches are already gone.
+    let mut whole_policy = None;
+    let mut preflight_x0f = None;
+    if raw_warm_start {
+        let preflight_start = Instant::now();
+        let initial = load_boundary_vector(&x0_arg, full_layers[0].total_states)?;
+        anyhow::ensure!(initial.iter().all(|value| value.is_finite()), "nonfinite GMRES initial value");
+        let guard = whole_guard.as_ref().expect("raw warm start requires whole input guard");
+        let settings = whole_settings.expect("raw warm start requires whole settings");
+        whole_policy = Some(loop1_whole_operator::validated_policy(&graph, &qfwd,
+            pre_reveal.as_ref().expect("raw warm start formula index"), &full_layers,
+            &policy_dir, two_line_field, guard)?);
+        let policy = whole_policy.as_ref().expect("raw warm start validated policy");
+        eprintln!("pi-policy-eval-gmres raw-warm-start roots={n} gamma=1 compiled_l9=0 dag=0 full_policy=1 workers=4 original_boundary=1");
+        let reference = loop1_whole_operator::raw_boundary_apply(policy, &qfwd, &l0_reset_qids,
+            guard, &initial, false, settings.reference)?;
+        reference.log_timing("pi-policy-eval-gmres raw-warm-start");
+        let residual = gmres_bellman_inf(&initial, &reference.values)?;
+        if residual <= accept_tol {
+            let applied_path = out_v_path.with_extension("applied.f32.bin");
+            // Publish the companion first. An authorized x0==out replacement
+            // must be the last operation that checks the original input name.
+            publish_finite_f32_atomic_checked(&applied_path, &reference.values, || {
+                guard.check()?;
+                policy.check_inputs_unchanged()
+            })?;
+            let bellman = gmres_accept_and_publish_checked(&out_v_path, &initial, &reference.values,
+                accept_tol, || {
+                    guard.check()?;
+                    policy.check_inputs_unchanged()
+                })?;
+            let (mut mn, mut mx, mut sum, mut negs) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f64, 0u64);
+            for &value in &initial {
+                mn = mn.min(value);
+                mx = mx.max(value);
+                sum += value as f64;
+                if value < 0.0 { negs += 1; }
+            }
+            eprintln!("pi-policy-eval-gmres raw-warm-start accepted roots={n} finite=1 raw_all_roots=1 elapsed_seconds={:.9} dag_built=0 relative_residual=not_computed", preflight_start.elapsed().as_secs_f64());
+            eprintln!("pi-policy-eval-gmres done v={} status=ACCEPTED_WARM_START krylov_iters=0 |T(v)-v|_inf={:.6e} accept_tol={:.1e} relative_residual=not_computed dag_built=0 v_min={:.8} v_max={:.8} v_avg={:.8} negatives={} (T(v) also written to {})",
+                out_v_path.display(), bellman, accept_tol, mn, mx, sum / n.max(1) as f64, negs, applied_path.display());
+            return Ok(());
+        }
+        eprintln!("pi-policy-eval-gmres raw-warm-start rejected |T(x0)-x0|_inf={residual:.6e} accept_tol={accept_tol:.1e} fallback=whole-dag elapsed_seconds={:.9}", preflight_start.elapsed().as_secs_f64());
+        preflight_x0f = Some(initial);
+    }
     let prepared_l9 = if compiled_l9_enabled {
         Some(loop1_prepared::PreparedL9::build(&graph, &q_index, &qfwd,
             pre_reveal.as_ref().expect("compiled L9 pre-reveal index"), &full_layers,
@@ -8039,11 +8093,13 @@ fn run_pi_policy_eval_gmres(args: &[String]) -> Result<()> {
     let action_resident_bytes = if !compiled_l9_enabled && action_cache_bytes > 0 {
         action_placements.as_ref().expect("action placement plan").storage_bytes()
     } else { 0 };
-    let whole_policy = if let Some(guard) = whole_guard.as_ref() {
-        Some(loop1_whole_operator::validated_policy(&graph, &qfwd,
-            pre_reveal.as_ref().expect("whole DAG formula index"), &full_layers,
-            &policy_dir, two_line_field, guard)?)
-    } else { None };
+    if whole_policy.is_none() {
+        if let Some(guard) = whole_guard.as_ref() {
+            whole_policy = Some(loop1_whole_operator::validated_policy(&graph, &qfwd,
+                pre_reveal.as_ref().expect("whole DAG formula index"), &full_layers,
+                &policy_dir, two_line_field, guard)?);
+        }
+    }
     let whole_terminal = if whole_settings.is_some() {
         Some(loop1_terminal::TerminalPlan::build(&q_index, &qfwd,
             pre_reveal.as_ref().expect("whole DAG formula index"))?)
@@ -8101,7 +8157,10 @@ fn run_pi_policy_eval_gmres(args: &[String]) -> Result<()> {
     let b: Vec<f64> = b32.iter().map(|&v| v as f64).collect();
     let b_norm = l2(&b).max(1e-300);
 
-    let x0f = load_boundary_vector(&x0_arg, full_layers[0].total_states)?;
+    let x0f = match preflight_x0f.take() {
+        Some(initial) => initial,
+        None => load_boundary_vector(&x0_arg, full_layers[0].total_states)?,
+    };
     anyhow::ensure!(x0f.iter().all(|v| v.is_finite()), "nonfinite GMRES initial value");
     let mut x0: Vec<f64> = x0f.iter().map(|&v| v as f64).collect();
     // r0 = b - A*x0 = b - (x0 - gamma*M*x0) = b + gamma*M*x0 - x0. gamma*M*x0 via the LINEAR

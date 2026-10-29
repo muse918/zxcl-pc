@@ -144,6 +144,11 @@ done
 At this point MDP construction is complete. `forward_pruned/` is the only build output
 required by the solver; retain or archive `backward/` if reproducibility is required.
 
+The compact temporary-membership path, bulk writes and index-only backward loading
+have a bounded real F3-to-F4 comparison in the
+[graph-to-index validation record](OPTIMIZATION_VALIDATION.md#graph-to-index-and-v-solve-follow-up-2026-10-29).
+That replay does not establish complete-build runtime.
+
 ## 5. Produce the u16 initialization seed
 
 ```bash
@@ -189,6 +194,11 @@ value layers by default.
 
 The accepted f32 Bellman infinity-norm floor defaults to `3e-3`. Lower values may be
 unreachable at V around 4,000 because a few f32 ULPs already exceed `1e-3`.
+
+The current GMRES source-bucket and phase-timing changes are tracked in the
+[V* solve follow-up](OPTIMIZATION_VALIDATION.md#graph-to-index-and-v-solve-follow-up-2026-10-29).
+Its actual GMRES performance measurements remain pending; warm fixed-policy DAG
+timings alone do not establish this solve stage's runtime.
 
 ## 7. Materialize the final result
 
